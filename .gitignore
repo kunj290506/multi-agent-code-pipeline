@@ -1,0 +1,155 @@
+# ──────────────────────────────────────────────
+#  .gitignore — Python + Node.js template
+#  Multi-Agent Code Pipeline
+# ──────────────────────────────────────────────
+
+# ── Python ────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# mypy / pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SQLite (local dev DB)
+*.sqlite3
+*.db
+
+# Alembic
+alembic/versions/*.pyc
+
+# ── Node.js ───────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+dist/
+dist-ssr/
+*.local
+
+# Vite
+.vite/
+
+# Next.js
+.next/
+out/
+
+# Nuxt.js
+.nuxt/
+
+# Gatsby
+.cache/
+public/
+
+# Parcel
+.parcel-cache/
+
+# Rollup
+.rollup.cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# Optional npm / yarn / pnpm
+.npm
+.yarn-integrity
+.pnpm-store/
+
+# ── Docker ────────────────────────────────────
+# Don't ignore docker-compose.yml itself — it's committed.
+# Ignore local override files:
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── n8n ──────────────────────────────────────
+# n8n local data (mounted via Docker volume; not committed)
+n8n/.n8n/
+
+# ── Ollama ────────────────────────────────────
+# Model weights are large — never commit them
+*.gguf
+*.bin
+models/
+
+# ── Secrets & environment ─────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# ── OS & editor ───────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
