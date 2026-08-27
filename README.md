@@ -81,20 +81,42 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 - Node.js 18+
 - Git
 
-### Quick Start (Placeholder)
+### Quick Start
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/<your-org>/multi-agent-code-pipeline.git
-cd multi-agent-code-pipeline
-
-# 2. Start core infrastructure
+# 1. Start core infrastructure (n8n, Ollama, Qdrant)
 docker compose up -d
 
-# 3. Access n8n dashboard
-open http://localhost:5678
+# 2. Wait for Ollama to become healthy, then pull and verify the local model
+#    Default model: mistral. Use --model to specify another (e.g. llama3.1:8b).
+pip install requests
+python ollama-setup.py
+#    Or specify a different model:
+#    python ollama-setup.py --model llama3.1:8b
 
-# 4. Configure agents (see individual agent READMEs)
+# 3. Access the n8n dashboard
+#    URL:      http://localhost:5678
+#    User:     admin
+#    Password: changeme
+
+# 4. Set up individual agents (see each agent's README for details)
+cd rag-agent     && pip install -r requirements.txt
+cd planner-agent && pip install -r requirements.txt
+cd db-agent      && pip install -r requirements.txt
+```
+
+### Ollama Model Setup Commands
+
+```bash
+# Verify Ollama is running
+curl http://localhost:11434/api/tags
+
+# Pull a model manually (alternative to the setup script)
+curl -X POST http://localhost:11434/api/pull -d '{"name": "mistral"}'
+
+# Test the model manually
+curl -X POST http://localhost:11434/api/generate \
+  -d '{"model": "mistral", "prompt": "Hello", "stream": false}'
 ```
 
 ---

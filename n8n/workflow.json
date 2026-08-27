@@ -1,0 +1,368 @@
+{
+  "id": "1",
+  "name": "Multi-Agent Code Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "feature-request",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [220, 300],
+      "webhookId": "feature-request-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/plan",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ feature_request: $json.body.feature_request, offline: $json.body.offline || false }) }}",
+        "options": {
+          "timeout": 240000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "call-planner-agent",
+      "name": "Call Planner Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the plan from the planner response and log it.\nconst plannerResponse = $input.first().json;\nconst plan = plannerResponse.body || plannerResponse;\n\n// Build a log entry.\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  step: 'planner',\n  input: { feature_request: plan.feature_request },\n  output: plan,\n  subtask_count: (plan.subtasks || []).length\n};\n\n// Pass the plan and log entry downstream.\nreturn [{\n  json: {\n    plan: plan,\n    log: logEntry,\n    subtasks: plan.subtasks || []\n  }\n}];"
+      },
+      "id": "parse-plan",
+      "name": "Parse Plan Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Split the subtasks array so each item flows to the router.\nconst item = $input.item;\nconst subtasks = item.json.subtasks || [];\nconst plan = item.json.plan;\nconst logs = [item.json.log];\n\nreturn subtasks.map(task => ({\n  json: {\n    ...task,\n    feature_request: plan.feature_request,\n    logs: logs\n  }\n}));"
+      },
+      "id": "split-subtasks",
+      "name": "Split Subtasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputIndex": 0,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.agent }}",
+                    "rightValue": "rag-agent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 1,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.agent }}",
+                    "rightValue": "codegen-agent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 2,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.agent }}",
+                    "rightValue": "reviewer-agent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 3,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.agent }}",
+                    "rightValue": "db-agent",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-to-agent",
+      "name": "Route to Agent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8001/query",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ question: $json.description, top_k: 5 }) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "call-rag-agent",
+      "name": "Call RAG Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8003/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $json.description, context: $json.context || '' }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "call-codegen-agent",
+      "name": "Call CodeGen Agent (Placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8004/review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ code: $json.code || '', description: $json.description }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "call-reviewer-agent",
+      "name": "Call Reviewer Agent (Placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8002/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $json.description, offline: false }) }}",
+        "options": {
+          "timeout": 240000
+        }
+      },
+      "id": "call-db-agent",
+      "name": "Call DB Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 640]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Collect all agent responses and build a combined log.\nconst items = $input.all();\nconst results = items.map((item, idx) => {\n  return {\n    step_index: idx,\n    timestamp: new Date().toISOString(),\n    agent_response: item.json\n  };\n});\n\nreturn [{\n  json: {\n    status: 'completed',\n    total_steps: results.length,\n    results: results\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Log all pipeline results to the output.\n// In production, this would write to a file or SQLite database.\nconst input = $input.all();\nconst logData = {\n  pipeline_run_id: Date.now().toString(36),\n  completed_at: new Date().toISOString(),\n  steps: input.map(item => item.json)\n};\n\n// The log data is passed to the webhook response.\nreturn [{\n  json: {\n    status: 'pipeline_complete',\n    log: logData\n  }\n}];"
+      },
+      "id": "log-results",
+      "name": "Log Pipeline Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Call Planner Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Planner Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Plan Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Plan Response": {
+      "main": [
+        [
+          {
+            "node": "Split Subtasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Subtasks": {
+      "main": [
+        [
+          {
+            "node": "Route to Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to Agent": {
+      "main": [
+        [
+          {
+            "node": "Call RAG Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call CodeGen Agent (Placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call Reviewer Agent (Placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call DB Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call RAG Agent": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call CodeGen Agent (Placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Reviewer Agent (Placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call DB Agent": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Log Pipeline Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-27T06:30:00.000Z",
+  "versionId": "1"
+}
