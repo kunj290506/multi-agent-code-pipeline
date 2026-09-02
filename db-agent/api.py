@@ -12,7 +12,7 @@ Endpoints:
 """
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 import config
 import query_generator
@@ -31,9 +31,10 @@ app = FastAPI(
 
 class GenerateRequest(BaseModel):
     """Request body for the /generate endpoint."""
-    request: str = Field(
-        ..., description="Natural-language description of the desired query."
+    request: str | None = Field(
+        default=None, description="Natural-language description of the desired query."
     )
+    description: str | None = Field(default=None, description="Alias for request (from Planner).")
     schema_override: str | None = Field(
         default=None,
         description="Optional database schema to use instead of the default.",
@@ -42,6 +43,15 @@ class GenerateRequest(BaseModel):
         default=False,
         description="If true, use offline mode (no Ollama required).",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_request_or_description(cls, data: dict):
+        if not data.get("request") and data.get("description"):
+            data["request"] = data["description"]
+        if not data.get("request"):
+            raise ValueError("Either 'request' or 'description' must be provided.")
+        return data
 
 
 class SafetyCheckResult(BaseModel):

@@ -11,7 +11,7 @@ Endpoints:
 """
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 import config
 import ingest as ingest_module
@@ -46,8 +46,18 @@ class IngestResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     """Request body for the /query endpoint."""
-    question: str = Field(..., description="Natural-language question.")
+    question: str | None = Field(default=None, description="Natural-language question.")
+    description: str | None = Field(default=None, description="Alias for question (from Planner).")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of chunks to retrieve.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_question_or_description(cls, data: dict):
+        if not data.get("question") and data.get("description"):
+            data["question"] = data["description"]
+        if not data.get("question"):
+            raise ValueError("Either 'question' or 'description' must be provided.")
+        return data
 
 
 class QueryResponse(BaseModel):

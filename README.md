@@ -19,7 +19,7 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
                  │      │      │   │
     ┌────────────▼─┐ ┌──▼───┐ │ ┌─▼──────────────┐
     │  RAG Agent   │ │Code  │ │ │  DB Agent       │
-    │  (Docs/Qdrant│ │ Gen  │ │ │ (Migrations &   │
+    │  (Docs/Chroma│ │ Gen  │ │ │ (Migrations &   │
     │   retrieval) │ │Agent │ │ │  SQL Queries)   │
     └──────────────┘ └──┬───┘ │ └────────────────┘
                         │     │
@@ -32,7 +32,7 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 | Agent | Role | Owner |
 |-------|------|-------|
 | **Planner Agent** | Orchestrates task flow, breaks user intent into subtasks, delegates to other agents | Member A |
-| **RAG Agent** | Retrieves relevant documentation snippets from Qdrant/Chroma vector DB | Member A |
+| **RAG Agent** | Retrieves relevant documentation snippets from Chroma vector DB | Member A |
 | **Code-Gen Agent** | Generates REST API endpoints and React components from specs | Member B |
 | **Reviewer/QA Agent** | Reviews generated code for bugs, style, and security issues | Member B |
 | **DB Agent** | Handles database migrations and query generation (shared) | Shared |
@@ -46,7 +46,7 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 | **Orchestration** | [n8n](https://n8n.io/) — visual workflow automation |
 | **Local LLM** | [Ollama](https://ollama.ai/) — runs models like `codellama`, `mistral` locally |
 | **LLM Framework** | [LangChain](https://www.langchain.com/) — chains, agents, prompt management |
-| **Vector Store** | [Qdrant](https://qdrant.tech/) / [Chroma](https://www.trychroma.com/) — document embeddings & retrieval |
+| **Vector Store** | [Chroma](https://www.trychroma.com/) — document embeddings & retrieval |
 | **Containerization** | [Docker](https://www.docker.com/) + Docker Compose |
 | **Backend (target)** | Python FastAPI / Node.js Express |
 | **Frontend (target)** | React + Vite |
@@ -58,7 +58,7 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 
 ### Member A
 - **Planner Agent**: Architecture, task decomposition logic, inter-agent communication
-- **RAG Agent**: Document ingestion pipeline, Qdrant integration, embedding setup
+- **RAG Agent**: Document ingestion pipeline, Chroma integration, embedding setup
 - **n8n Workflows**: Visual orchestration of all agent triggers and data flows
 - **Ollama Setup**: Local model deployment, model selection, inference configuration
 - **DB Agent** (shared): Schema design, migration strategy
@@ -84,7 +84,7 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 ### Quick Start
 
 ```bash
-# 1. Start core infrastructure (n8n, Ollama, Qdrant)
+# 1. Start core infrastructure (n8n, Ollama, ChromaDB is local)
 docker compose up -d
 
 # 2. Wait for Ollama to become healthy, then pull and verify the local model

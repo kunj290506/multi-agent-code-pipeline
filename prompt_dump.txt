@@ -1,0 +1,206 @@
+<USER_REQUEST>
+You are helping build a component of a multi-agent AI system called 
+"multi-agent-code-pipeline". Work only inside the local project folder 
+on this machine. Do not run any git commands, do not commit, and do not 
+push to any remote repository under any circumstances, until explicit 
+permission is given later. Build and test everything locally only.
+
+SCOPE OF WORK:
+Build the following components: Target Application, Code-Gen Agent, 
+Reviewer/QA Agent, and the execution/sandboxing half of the DB Agent.
+
+Existing folder structure (already created):
+multi-agent-code-pipeline/
+├── planner-agent/     (out of scope — do not modify)
+├── rag-agent/         (out of scope — do not modify)
+├── codegen-agent/
+├── reviewer-agent/
+├── db-agent/
+├── target-app/
+├── n8n/               (out of scope — do not modify)
+├── docker-compose.yml
+└── README.md
+
+BUILD THE FOLLOWING, STEP BY STEP:
+
+1. TARGET APPLICATION (inside target-app/)
+   - Build a small sample backend application (FastAPI or Flask) with a 
+     few basic REST endpoints (e.g. a simple task-management or notes API).
+   - Add a corresponding SQL database schema (users, tasks, or similar — 
+     keep it simple and realistic).
+   - Include basic seed data for local testing.
+   - Include requirements.txt and a README describing the application and 
+     how to run it locally.
+   - This becomes the reference application that the RAG agent indexes 
+     and that the Code-Gen agent generates additions for.
+
+2. CODE-GEN AGENT (inside codegen-agent/)
+   - Build a Python project using the local model (Ollama) to generate 
+     one class of code artifact at a time (for example, a new REST 
+     endpoint or a new React component) from a written specification.
+   - Define a strict input specification format (what fields describe 
+     the requested artifact) and a strict JSON output format (generated 
+     code plus metadata).
+   - Include a FastAPI wrapper exposin
+<truncated 1421 bytes>
+
+     read-only connections where appropriate, execution timeouts, and 
+     row-count limits.
+   - Include a test script verifying execution against sample queries, 
+     including confirming that timeout and row-limit protections work.
+   - Include a README clearly documenting the scope of this component so 
+     it integrates cleanly with the existing query-generation module.
+
+GENERAL REQUIREMENTS:
+- Every component must include a working requirements.txt (or 
+  package.json, where applicable) and a README describing its purpose 
+  and usage.
+- Test each component locally as it is built. Show test output before 
+  proceeding to the next component.
+- All inter-agent communication must use structured JSON.
+- Do not modify planner-agent/, rag-agent/, or n8n/.
+- Do not run git init, git add, git commit, or git push at any stage, 
+  under any circumstances, until told explicitly that permission has 
+  been given.
+- Do not use emojis anywhere in code, comments, documentation, or output.
+- Do not include any personal names, emails, or identifying details 
+  anywhere in code, comments, documentation, commit messages, or output.
+- Maintain professional, industry-standard code quality: consistent 
+  naming conventions, docstrings/comments where appropriate, and clean 
+  project structure suitable for a production-style codebase.
+
+Proceed through the sections in order. After each section, report what 
+was built and the corresponding test results before continuing to the 
+next. Stop after Section 4 and wait for further instructions — do not 
+attempt any git operations even if all tests pass.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T18:59:00+05:30.
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Claude Opus 4.6 (Thinking). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+---
+<USER_REQUEST>
+This is a two-stage task. Do not begin Stage 2 until Stage 1 is fully 
+complete and confirmed. Do not run any git commands, do not commit, and 
+do not push to any remote repository at any point in this task, under 
+any circumstances, until explicit permission is given later.
+
+=====================================================================
+STAGE 1: PROJECT COMPLETENESS VERIFICATION
+=====================================================================
+
+Verify the full multi-agent-code-pipeline project is actually ready to 
+be driven by a live application, not just individually tested.
+
+1. PORT CONFLICT CHECK AND RESOLUTION
+   - List every agent's configured port across planner-agent/, rag-agent/, 
+     db-agent/, codegen-agent/, reviewer-agent/, and target-app/.
+   - Identify any duplicate port assignments.
+   - Resolve conflicts by assigning each service a unique port. Use this 
+     allocation unless a component cannot support it:
+       target-app        : 8000
+       planner-agent      : 8010
+       rag-agent           : 8011
+       db-agent (query-gen): 8012
+       db-agent (executor) : 8013
+       codegen-agent        : 8014
+       reviewer-agent       : 8015
+   - Update each component's config file and README to reflect the new 
+     port. Update n8n/workflow.json node URLs to match.
+   - Update docker-compose.yml if any service ports are defined there.
+
+2. DEPENDENCY AND INTERFACE CHECK
+   - Confirm the JSON output format of the Planner agent's subtasks 
+     matches the JSON input format expected by the RAG, Code-Gen, 
+     Reviewer, and DB agents. List any mismatches found.
+   - Confirm the Code-Gen agent's output format matches what the 
+     Reviewer agent expects as input.
+   - Confirm the DB agent's query-generation output format matches what 
+     the DB agent's execution layer expects as input.
+   - Fix any mismatches found so all five agents can be chained together 
+     without manual reformatting.
+
+3. FULL LOCAL BOOT TEST
+   - Start al
+<truncated 2869 bytes>
+") 
+  without using any personal names.
+- Include a simple run history so previous feature requests and their 
+  outcomes remain visible after a new request is submitted.
+
+TECHNICAL REQUIREMENTS
+
+- Backend: Python, using FastAPI, acting as a thin orchestration layer 
+  that calls the existing agent APIs — do not duplicate agent logic 
+  inside the webapp backend.
+- Frontend: a simple, clean single-page application (React is acceptable 
+  if already used elsewhere in the project, otherwise plain HTML/CSS/JS 
+  is acceptable). Prioritize clarity and reliability over visual polish.
+- Use WebSockets (or SSE) for the real-time reasoning feed and file 
+  explorer updates.
+- Include a requirements.txt (backend) and package.json (frontend, if 
+  applicable).
+- Include a README explaining how to start the webapp and how it 
+  connects to each existing agent.
+
+TESTING
+
+- Test the full flow with at least one real feature request end to end: 
+  submit it in the chat window, confirm the reasoning feed updates 
+  correctly through all applicable agents, confirm a file appears in the 
+  file explorer and its content is viewable, and confirm the Reviewer 
+  result is shown.
+- Report the test outcome clearly, including any step that did not 
+  behave as expected.
+
+GENERAL RULES
+
+- Do not use emojis anywhere in code, comments, documentation, UI text, 
+  or output.
+- Do not include any personal names, emails, or identifying details 
+  anywhere in code, comments, documentation, UI text, or output.
+- Maintain professional, industry-standard code quality and folder 
+  structure.
+- Do not run git init, git add, git commit, or git push at any stage, 
+  under any circumstances, until told explicitly that permission has 
+  been given.
+
+Proceed through Stage 1 completely first. Report the Stage 1 status 
+table and explicitly ask before beginning Stage 2, even if everything 
+passed.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T19:21:10+05:30.
+</ADDITIONAL_METADATA>
+---
+<USER_REQUEST>
+continue 
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T19:23:06+05:30.
+
+The user's current state is as follows:
+Active Document: d:\projects\multi-agent-code-pipeline\planner-agent\config.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- d:\projects\multi-agent-code-pipeline\planner-agent\config.py (LANGUAGE_PYTHON)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from Claude Opus 4.6 (Thinking) to Gemini 3.1 Pro (High). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+---
+<USER_REQUEST>
+start 
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T19:26:38+05:30.
+
+The user's current state is as follows:
+Active Document: d:\projects\multi-agent-code-pipeline\planner-agent\config.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- d:\projects\multi-agent-code-pipeline\planner-agent\config.py (LANGUAGE_PYTHON)
+</ADDITIONAL_METADATA>
+---

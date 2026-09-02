@@ -2,7 +2,7 @@ version: "3.9"
 
 # ─────────────────────────────────────────────
 #  Multi-Agent Code Pipeline — Infrastructure
-#  Services: n8n · Ollama · Qdrant
+#  Services: n8n · Ollama · ChromaDB (Local)
 # ─────────────────────────────────────────────
 
 services:
@@ -54,18 +54,7 @@ services:
   #   networks:
   #     - pipeline-net
 
-  # ── Qdrant: Vector database for RAG agent ───
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant
-    restart: unless-stopped
-    ports:
-      - "6333:6333"   # REST API
-      - "6334:6334"   # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    networks:
-      - pipeline-net
+
 
 # ─────────────────────────────────────────────
 #  Named Volumes
@@ -73,7 +62,6 @@ services:
 volumes:
   n8n_data:
   ollama_data:
-  qdrant_data:
 
 # ─────────────────────────────────────────────
 #  Networks

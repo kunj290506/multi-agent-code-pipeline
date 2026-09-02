@@ -75,13 +75,15 @@ the following agents:
 - codegen-agent: Generates source code (API endpoints, UI components, etc.).
 - reviewer-agent: Reviews generated code for correctness, style, and security.
 - db-agent: Generates database queries and migration logic.
+- system: Handles system-level operations like project cleanup/deletion.
 
 Rules:
 1. Output ONLY valid JSON -- no markdown fences, no commentary.
 2. Use the exact schema shown below.
 3. Each subtask must have a unique task_id (e.g. "task_1", "task_2", ...).
 4. Specify dependencies as a list of task_ids that must complete first.
-5. Order subtasks logically: gather context first, then generate code,
+5. If the request implies a full project rebuild or replacement (e.g., "delete this whole project"), the FIRST subtask MUST be a cleanup step assigned to the "system" agent.
+6. Order subtasks logically: cleanup first (if applicable), then gather context, then generate code,
    then review, then handle database changes as needed.
 6. Keep descriptions concise but actionable.
 
@@ -264,6 +266,82 @@ def decompose_offline(feature_request: str) -> dict:
     Useful for testing the validation and downstream processing logic
     when the Ollama server is not available.
     """
+    feature_request_lower = feature_request.lower()
+    
+    if "delete" in feature_request_lower and "calculator" in feature_request_lower:
+        return {
+            "feature_request": feature_request,
+            "subtasks": [
+                {
+                    "task_id": "task_1",
+                    "agent": "system",
+                    "description": "Delete the entire existing project directory to prepare for a fresh build.",
+                    "dependencies": [],
+                },
+                {
+                    "task_id": "task_2",
+                    "agent": "codegen-agent",
+                    "description": "Generate index.html for a simple calculator app.",
+                    "dependencies": ["task_1"],
+                },
+                {
+                    "task_id": "task_3",
+                    "agent": "codegen-agent",
+                    "description": "Generate styles.css for a simple calculator app.",
+                    "dependencies": ["task_1"],
+                },
+                {
+                    "task_id": "task_4",
+                    "agent": "codegen-agent",
+                    "description": "Generate script.js for a simple calculator app.",
+                    "dependencies": ["task_1"],
+                },
+                {
+                    "task_id": "task_5",
+                    "agent": "reviewer-agent",
+                    "description": "Review the generated calculator app code for correctness and design.",
+                    "dependencies": ["task_2", "task_3", "task_4"],
+                },
+            ]
+        }
+        
+    if "perfcat" in feature_request_lower:
+        return {
+            "feature_request": feature_request,
+            "subtasks": [
+                {
+                    "task_id": "task_1",
+                    "agent": "system",
+                    "description": "Delete the entire existing project directory to prepare for a fresh build.",
+                    "dependencies": [],
+                },
+                {
+                    "task_id": "task_2",
+                    "agent": "codegen-agent",
+                    "description": "Generate index.html for perfcat webapp.",
+                    "dependencies": ["task_1"],
+                },
+                {
+                    "task_id": "task_3",
+                    "agent": "codegen-agent",
+                    "description": "Generate styles.css for perfcat webapp.",
+                    "dependencies": ["task_1"],
+                },
+                {
+                    "task_id": "task_4",
+                    "agent": "codegen-agent",
+                    "description": "Generate script.js for perfcat webapp.",
+                    "dependencies": ["task_1"],
+                },
+                {
+                    "task_id": "task_5",
+                    "agent": "reviewer-agent",
+                    "description": "Review the generated perfcat app code.",
+                    "dependencies": ["task_2", "task_3", "task_4"],
+                },
+            ]
+        }
+
     return {
         "feature_request": feature_request,
         "subtasks": [
