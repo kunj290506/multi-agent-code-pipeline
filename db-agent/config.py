@@ -22,7 +22,7 @@ MAX_TOKENS: int = int(os.getenv("DB_AGENT_MAX_TOKENS", "1024"))
 # API server
 # ---------------------------------------------------------------------------
 API_HOST: str = os.getenv("DB_AGENT_HOST", "0.0.0.0")
-API_PORT: int = int(os.getenv("DB_AGENT_PORT", "8002"))
+API_PORT: int = int(os.getenv("DB_AGENT_PORT", "8012"))
 
 # ---------------------------------------------------------------------------
 # Placeholder database schema for query generation

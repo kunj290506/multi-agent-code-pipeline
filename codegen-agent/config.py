@@ -1,7 +1,7 @@
 """
-Planner Agent Configuration.
+Code-Gen Agent Configuration.
 
-Centralizes all configurable parameters for the planner/orchestrator agent.
+Centralizes all configurable parameters for the code generation service.
 """
 
 import os
@@ -13,24 +13,13 @@ OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 
 # ---------------------------------------------------------------------------
-# Subtask schema: valid agent names
-# ---------------------------------------------------------------------------
-VALID_AGENTS: list[str] = [
-    "rag-agent",
-    "codegen-agent",
-    "reviewer-agent",
-    "db-agent",
-    "system",
-]
-
-# ---------------------------------------------------------------------------
 # LLM generation parameters
 # ---------------------------------------------------------------------------
-TEMPERATURE: float = float(os.getenv("PLANNER_TEMPERATURE", "0.1"))
-MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "2048"))
+TEMPERATURE: float = float(os.getenv("CODEGEN_TEMPERATURE", "0.2"))
+MAX_TOKENS: int = int(os.getenv("CODEGEN_MAX_TOKENS", "2048"))
 
 # ---------------------------------------------------------------------------
 # API server
 # ---------------------------------------------------------------------------
-API_HOST: str = os.getenv("PLANNER_API_HOST", "0.0.0.0")
-API_PORT: int = int(os.getenv("PLANNER_API_PORT", "8010"))
+API_HOST: str = os.getenv("CODEGEN_HOST", "0.0.0.0")
+API_PORT: int = int(os.getenv("CODEGEN_PORT", "8014"))

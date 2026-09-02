@@ -189,16 +189,110 @@ CREATE TABLE comments (
 );
 ```
 
+```
+
 ---
 
-## Integration with Execution Layer
+## Execution and Sandboxing Layer
 
-The execution layer (built separately) should:
-1. Call `POST /generate` with a natural-language request.
+The execution layer is a separate component within the DB Agent that handles
+the safe execution of parameterized queries. It is independent of the
+query-generation module and enforces its own protections.
+
+### Scope
+
+| In Scope                                         | Out of Scope                          |
+|--------------------------------------------------|---------------------------------------|
+| Parameterized query execution                    | Natural-language to SQL translation   |
+| Sandboxed SQLite database management             | Query optimization                    |
+| Read-only connection enforcement                 | Connection pooling (production)       |
+| Execution timeouts                               | Multi-database support                |
+| Row-count limits                                 | ORM integration                       |
+| Result formatting as JSON                        | Transaction management                |
+
+### Files
+
+```
+db-agent/
+  sandbox.py          -- Sandbox database lifecycle management
+  executor.py         -- Core query execution engine
+  executor_api.py     -- FastAPI HTTP wrapper (port 8003)
+  test_executor.py    -- Execution layer tests
+```
+
+### Execution API (Port 8003)
+
+| Method | Endpoint   | Description                              |
+|--------|------------|------------------------------------------|
+| `GET`  | `/health`  | Health check                             |
+| `POST` | `/execute` | Execute a parameterized query            |
+
+#### POST /execute
+
+Request:
+```json
+{
+  "query": "SELECT id, username FROM users WHERE role = ?",
+  "parameters": ["admin"],
+  "timeout": 10.0,
+  "max_rows": 100,
+  "enforce_read_only": null
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "query": "SELECT id, username FROM users WHERE role = ?",
+  "parameters": ["admin"],
+  "columns": ["id", "username"],
+  "rows": [{"id": 1, "username": "admin_lead"}],
+  "row_count": 1,
+  "truncated": false,
+  "execution_time_ms": 1.23,
+  "error": null
+}
+```
+
+### Protections
+
+| Protection           | Description                                      |
+|----------------------|--------------------------------------------------|
+| **Read-only mode**   | SELECT queries use read-only connections by default. Write operations are blocked on read-only connections. |
+| **Execution timeout**| Queries exceeding the timeout (default: 10s) are interrupted via SQLite progress handler. |
+| **Row-count limit**  | Results are truncated to max_rows (default: 1000). The `truncated` flag indicates if truncation occurred. |
+| **Sandboxed DB**     | Each execution creates a temporary SQLite database that is destroyed after use. |
+
+### Running the Execution API
+
+```bash
+python executor_api.py
+# Server starts at http://localhost:8003
+```
+
+### Running Execution Tests
+
+```bash
+python test_executor.py
+```
+
+### Integration with Query-Generation Module
+
+The typical workflow:
+1. Call the query-generation API (`POST /generate` on port 8002).
 2. Receive the parameterized query and parameters.
-3. Execute the query in a sandboxed database connection.
-4. Return formatted results.
+3. Pass them to the execution API (`POST /execute` on port 8003).
+4. Receive formatted results.
 
 The query-generation module guarantees that all returned queries have passed
-safety validation. The execution layer should still enforce additional
-protections (read-only connections, timeouts, row limits, etc.).
+safety validation. The execution layer enforces additional runtime protections
+(read-only connections, timeouts, row limits) as a defense-in-depth measure.
+
+### Configuration
+
+| Variable              | Default    | Description                      |
+|-----------------------|------------|----------------------------------|
+| `DB_EXECUTOR_HOST`    | `0.0.0.0` | Execution API bind address       |
+| `DB_EXECUTOR_PORT`    | `8003`     | Execution API port               |
+

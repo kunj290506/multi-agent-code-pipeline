@@ -81,7 +81,7 @@ All settings are controlled via environment variables or defaults in `config.py`
 | `CHUNK_SIZE`        | `1000`                         | Characters per chunk               |
 | `CHUNK_OVERLAP`     | `200`                          | Overlap between consecutive chunks |
 | `RAG_API_HOST`      | `0.0.0.0`                      | API server bind address            |
-| `RAG_API_PORT`      | `8001`                         | API server port                    |
+| `RAG_API_PORT`      | `8011`                         | API server port                    |
 
 ---
 
@@ -108,7 +108,7 @@ python query.py "What API endpoints does the application expose?"
 
 ```bash
 python api.py
-# Server starts at http://localhost:8001
+# Server starts at http://localhost:8011
 ```
 
 API endpoints:

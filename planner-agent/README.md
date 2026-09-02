@@ -117,7 +117,7 @@ pip install -r requirements.txt
 | `PLANNER_TEMPERATURE` | `0.1`                     | Sampling temperature           |
 | `PLANNER_MAX_TOKENS`  | `2048`                    | Maximum tokens in response     |
 | `PLANNER_API_HOST`    | `0.0.0.0`                | API server bind address        |
-| `PLANNER_API_PORT`    | `8000`                    | API server port                |
+| `PLANNER_API_PORT`    | `8010`                    | API server port                |
 
 ---
 
@@ -137,7 +137,7 @@ python planner.py --offline "Add a user authentication system with JWT tokens"
 
 ```bash
 python api.py
-# Server starts at http://localhost:8000
+# Server starts at http://localhost:8010
 ```
 
 Endpoints:

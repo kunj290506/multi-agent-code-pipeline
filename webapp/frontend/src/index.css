@@ -1,0 +1,55 @@
+:root {
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --bg-gradient-start: #f1f5f9;
+  --bg-gradient-end: #ffffff;
+  --panel-bg: rgba(255, 255, 255, 0.6);
+  --panel-border: rgba(255, 255, 255, 0.8);
+  --accent: #0ea5e9;
+  --accent-hover: #0284c7;
+  --accent-bg: rgba(14, 165, 233, 0.1);
+  --success: #10b981;
+  --error: #ef4444;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, Consolas, monospace;
+
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+  background-attachment: fixed;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+

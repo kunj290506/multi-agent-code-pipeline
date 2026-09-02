@@ -57,4 +57,4 @@ CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))
 # API server
 # ---------------------------------------------------------------------------
 API_HOST: str = os.getenv("RAG_API_HOST", "0.0.0.0")
-API_PORT: int = int(os.getenv("RAG_API_PORT", "8001"))
+API_PORT: int = int(os.getenv("RAG_API_PORT", "8011"))

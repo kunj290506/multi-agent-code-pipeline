@@ -1,0 +1,147 @@
+<USER_REQUEST>
+This is a two-stage task. Do not begin Stage 2 until Stage 1 is fully 
+complete and confirmed. Do not run any git commands, do not commit, and 
+do not push to any remote repository at any point in this task, under 
+any circumstances, until explicit permission is given later.
+
+=====================================================================
+STAGE 1: PROJECT COMPLETENESS VERIFICATION
+=====================================================================
+
+Verify the full multi-agent-code-pipeline project is actually ready to 
+be driven by a live application, not just individually tested.
+
+1. PORT CONFLICT CHECK AND RESOLUTION
+   - List every agent's configured port across planner-agent/, rag-agent/, 
+     db-agent/, codegen-agent/, reviewer-agent/, and target-app/.
+   - Identify any duplicate port assignments.
+   - Resolve conflicts by assigning each service a unique port. Use this 
+     allocation unless a component cannot support it:
+       target-app        : 8000
+       planner-agent      : 8010
+       rag-agent           : 8011
+       db-agent (query-gen): 8012
+       db-agent (executor) : 8013
+       codegen-agent        : 8014
+       reviewer-agent       : 8015
+   - Update each component's config file and README to reflect the new 
+     port. Update n8n/workflow.json node URLs to match.
+   - Update docker-compose.yml if any service ports are defined there.
+
+2. DEPENDENCY AND INTERFACE CHECK
+   - Confirm the JSON output format of the Planner agent's subtasks 
+     matches the JSON input format expected by the RAG, Code-Gen, 
+     Reviewer, and DB agents. List any mismatches found.
+   - Confirm the Code-Gen agent's output format matches what the 
+     Reviewer agent expects as input.
+   - Confirm the DB agent's query-generation output format matches what 
+     the DB agent's execution layer expects as input.
+   - Fix any mismatches found so all five agents can be chained together 
+     without manual reformatting.
+
+3. FULL LOCAL BOOT TEST
+   - Start all agent services on their corrected ports.
+   - Confirm every agent responds successfully on its /health endpoint.
+   - Do not proceed to Stage 2 until all agents boot cleanly and all 
+     interfaces are confirmed compatible.
+
+4. REPORT
+   - Produce a clear status table: component, port, health check result, 
+     interface compatibility result.
+   - State explicitly whether the project is ready for Stage 2.
+
+=====================================================================
+STAGE 2: BUILD THE WEB APPLICATION
+=====================================================================
+
+Only begin this stage if Stage 1 reports the project is fully ready.
+
+Build a single web application that provides an IDE-style interface for 
+driving the multi-agent pipeline end to end. This is a new component — 
+create it in a new top-level folder named webapp/. Do not modify any 
+existing agent folders except for the port and interface fixes already 
+made in Stage 1.
+
+LAYOUT REQUIREMENTS
+
+- Left panel: a file explorer tree showing the live project folder 
+  structure. It must update automatically as agents create or modify 
+  files during a run.
+- Center panel: a code viewer that opens automatically to show the 
+  content of any file the agents are currently writing or have just 
+  written, with syntax highlighting.
+- Right panel or bottom panel: a chat window where the user types a 
+  feature request in plain language and submits it.
+- Below or alongside the chat input: a live reasoning/activity feed 
+  that shows, step by step, what is happening — which agent is running, 
+  what it received as input, what it produced as output, and whether a 
+  step passed or failed. This must update in real time as the pipeline 
+  runs, not only after completion.
+
+FUNCTIONAL REQUIREMENTS
+
+- On submitting a feature request in the chat window, the backend must:
+  1. Call the Planner agent to get the subtask list.
+  2. Execute each subtask against the correct downstream agent, in 
+     dependency order.
+  3. Stream each step's status and output to the frontend in real time 
+     (use WebSockets or server-sent events, not polling).
+  4. When the Code-Gen agent produces a file, write it to the actual 
+     target-app/ directory (or a clearly separate generated-output/ 
+     directory if writing into target-app/ is judged unsafe) and 
+     immediately reflect this in the file explorer and code viewer.
+  5. Route generated code through the Reviewer agent and display the 
+     pass/fail result and any issues in the reasoning feed.
+  6. If a query needs to run through the DB agent, show the generated 
+     query, then the execution result, in the reasoning feed.
+- The reasoning feed must clearly label which agent produced each entry 
+  (for example: "Planner", "RAG", "Code-Gen", "Reviewer", "DB Agent") 
+  without using any personal names.
+- Include a simple run history so previous feature requests and their 
+  outcomes remain visible after a new request is submitted.
+
+TECHNICAL REQUIREMENTS
+
+- Backend: Python, using FastAPI, acting as a thin orchestration layer 
+  that calls the existing agent APIs — do not duplicate agent logic 
+  inside the webapp backend.
+- Frontend: a simple, clean single-page application (React is acceptable 
+  if already used elsewhere in the project, otherwise plain HTML/CSS/JS 
+  is acceptable). Prioritize clarity and reliability over visual polish.
+- Use WebSockets (or SSE) for the real-time reasoning feed and file 
+  explorer updates.
+- Include a requirements.txt (backend) and package.json (frontend, if 
+  applicable).
+- Include a README explaining how to start the webapp and how it 
+  connects to each existing agent.
+
+TESTING
+
+- Test the full flow with at least one real feature request end to end: 
+  submit it in the chat window, confirm the reasoning feed updates 
+  correctly through all applicable agents, confirm a file appears in the 
+  file explorer and its content is viewable, and confirm the Reviewer 
+  result is shown.
+- Report the test outcome clearly, including any step that did not 
+  behave as expected.
+
+GENERAL RULES
+
+- Do not use emojis anywhere in code, comments, documentation, UI text, 
+  or output.
+- Do not include any personal names, emails, or identifying details 
+  anywhere in code, comments, documentation, UI text, or output.
+- Maintain professional, industry-standard code quality and folder 
+  structure.
+- Do not run git init, git add, git commit, or git push at any stage, 
+  under any circumstances, until told explicitly that permission has 
+  been given.
+
+Proceed through Stage 1 completely first. Report the Stage 1 status 
+table and explicitly ask before beginning Stage 2, even if everything 
+passed.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T19:21:10+05:30.
+</ADDITIONAL_METADATA>
+---
