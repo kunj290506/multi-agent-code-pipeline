@@ -85,6 +85,13 @@ class ReviewResponse(BaseModel):
     issues_by_severity: dict[str, int]
     issues: list[ReviewIssue]
     categories_checked: list[str]
+    reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Optional explanation of the reviewer's reasoning — why issues were "
+            "flagged or the code passed. Produced by the LLM; never synthesized."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

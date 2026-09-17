@@ -44,12 +44,14 @@ class SubtaskResponse(BaseModel):
     agent: str
     description: str
     dependencies: list[str]
+    target_filename: str | None = None
 
 
 class PlanResponse(BaseModel):
     """Response body for the /plan endpoint."""
     feature_request: str
     subtasks: list[SubtaskResponse]
+    reasoning: str | None = None
 
 
 # ---------------------------------------------------------------------------

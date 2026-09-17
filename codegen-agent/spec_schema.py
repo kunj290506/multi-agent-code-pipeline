@@ -109,3 +109,10 @@ class GeneratedArtifact(BaseModel):
         default_factory=list,
         description="Any warnings or caveats about the generated code.",
     )
+    reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Optional explanation of the model's reasoning process — why it made "
+            "particular design choices. Produced by the LLM; never synthesized."
+        ),
+    )

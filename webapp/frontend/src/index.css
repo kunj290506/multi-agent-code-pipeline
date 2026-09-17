@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;700&family=JetBrains+Mono:wght@400&display=swap');
+
 /* ===== DESIGN TOKENS — BMW M SYSTEM ===== */
 :root {
   /* Canvas & surfaces */
@@ -8,6 +10,7 @@
   --hairline: #3c3c3c;
 
   /* Text */
+  --text-white: #ffffff;
   --text-primary: #ffffff;
   --text-body: #bbbbbb;
   --text-muted: #7e7e7e;
@@ -18,8 +21,9 @@
   --accent-red: #e22718;
 
   /* Typography */
+  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
   --font: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, Consolas, monospace;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, Consolas, monospace;
 
   /* Spacing scale */
   --sp-1: 4px;
@@ -40,13 +44,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
 body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
   background: var(--canvas);
+  color: var(--text-body);
+  font-family: var(--font-display);
+  font-weight: 300;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {

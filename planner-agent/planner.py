@@ -43,6 +43,14 @@ SUBTASK_SCHEMA = {
             "items": {"type": "string"},
             "description": "List of task_id values that must complete before this subtask.",
         },
+        "target_filename": {
+            "type": "string",
+            "description": (
+                "For codegen-agent subtasks only: the exact filename to write "
+                "(e.g. 'index.html', 'style.css', 'app.py'). Required when the "
+                "request is for a whole new project."
+            ),
+        },
     },
 }
 
@@ -59,6 +67,10 @@ PLAN_SCHEMA = {
             "items": SUBTASK_SCHEMA,
             "description": "Ordered list of subtasks to fulfill the request.",
         },
+        "reasoning": {
+            "type": "string",
+            "description": "Brief explanation of how you decomposed this request.",
+        },
     },
 }
 
@@ -72,7 +84,7 @@ into an ordered list of subtasks. Each subtask must be assigned to exactly one o
 the following agents:
 
 - rag-agent: Retrieves relevant documentation and codebase context.
-- codegen-agent: Generates source code (API endpoints, UI components, etc.).
+- codegen-agent: Generates source code (one file per subtask).
 - reviewer-agent: Reviews generated code for correctness, style, and security.
 - db-agent: Generates database queries and migration logic.
 - system: Handles system-level operations like project cleanup/deletion.
@@ -82,20 +94,30 @@ Rules:
 2. Use the exact schema shown below.
 3. Each subtask must have a unique task_id (e.g. "task_1", "task_2", ...).
 4. Specify dependencies as a list of task_ids that must complete first.
-5. If the request implies a full project rebuild or replacement (e.g., "delete this whole project"), the FIRST subtask MUST be a cleanup step assigned to the "system" agent.
-6. Order subtasks logically: cleanup first (if applicable), then gather context, then generate code,
-   then review, then handle database changes as needed.
-6. Keep descriptions concise but actionable.
+5. If the request implies a full project rebuild or replacement (e.g., "delete this whole project"),
+   the FIRST subtask MUST be a cleanup step assigned to the "system" agent.
+6. WHOLE-PROJECT REQUESTS (e.g. "build a calculator app", "create a todo app"):
+   - Create ONE codegen-agent subtask per output file (e.g. index.html, style.css, app.js, README.md).
+   - Each codegen subtask MUST include a "target_filename" field with the exact filename to write.
+   - Do NOT create a single codegen subtask for the whole project — one subtask per file only.
+   - Omit rag-agent unless existing codebase files are available to index.
+   - Omit db-agent unless the app genuinely needs a database.
+7. SINGLE-FEATURE REQUESTS (adding to an existing project): use rag-agent first if helpful,
+   then codegen-agent (one subtask per file changed), then db-agent only if needed.
+8. Always include a "reasoning" field in the top-level response explaining your decomposition.
+9. Keep descriptions concise but actionable.
 
 Output schema:
 {
   "feature_request": "<original request>",
+  "reasoning": "<brief explanation of how you decomposed this request>",
   "subtasks": [
     {
       "task_id": "task_1",
       "agent": "<agent-name>",
       "description": "<what this subtask does>",
-      "dependencies": []
+      "dependencies": [],
+      "target_filename": "<filename — required for codegen-agent subtasks in whole-project requests>"
     }
   ]
 }"""
@@ -271,6 +293,11 @@ def decompose_offline(feature_request: str) -> dict:
     if "delete" in feature_request_lower and "calculator" in feature_request_lower:
         return {
             "feature_request": feature_request,
+            "reasoning": (
+                "Whole-project request: calculator app. Cleaning existing workspace first, "
+                "then generating one file per output artifact (HTML structure, CSS styles, "
+                "JS logic), each as a separate codegen subtask with explicit target_filename."
+            ),
             "subtasks": [
                 {
                     "task_id": "task_1",
@@ -281,33 +308,34 @@ def decompose_offline(feature_request: str) -> dict:
                 {
                     "task_id": "task_2",
                     "agent": "codegen-agent",
-                    "description": "Generate index.html for a simple calculator app.",
+                    "description": "Generate index.html for a simple calculator app with buttons for 0-9, +, -, *, /, =, C and a display.",
                     "dependencies": ["task_1"],
+                    "target_filename": "index.html",
                 },
                 {
                     "task_id": "task_3",
                     "agent": "codegen-agent",
-                    "description": "Generate styles.css for a simple calculator app.",
+                    "description": "Generate style.css for the calculator app — dark theme, grid layout for buttons.",
                     "dependencies": ["task_1"],
+                    "target_filename": "style.css",
                 },
                 {
                     "task_id": "task_4",
                     "agent": "codegen-agent",
-                    "description": "Generate script.js for a simple calculator app.",
+                    "description": "Generate script.js for the calculator app — handles button clicks, evaluates expressions, updates display.",
                     "dependencies": ["task_1"],
-                },
-                {
-                    "task_id": "task_5",
-                    "agent": "reviewer-agent",
-                    "description": "Review the generated calculator app code for correctness and design.",
-                    "dependencies": ["task_2", "task_3", "task_4"],
+                    "target_filename": "script.js",
                 },
             ]
         }
-        
+
     if "perfcat" in feature_request_lower:
         return {
             "feature_request": feature_request,
+            "reasoning": (
+                "Whole-project request: perfcat webapp. Generating one file per output artifact "
+                "with explicit target_filename per codegen subtask."
+            ),
             "subtasks": [
                 {
                     "task_id": "task_1",
@@ -320,30 +348,81 @@ def decompose_offline(feature_request: str) -> dict:
                     "agent": "codegen-agent",
                     "description": "Generate index.html for perfcat webapp.",
                     "dependencies": ["task_1"],
+                    "target_filename": "index.html",
                 },
                 {
                     "task_id": "task_3",
                     "agent": "codegen-agent",
-                    "description": "Generate styles.css for perfcat webapp.",
+                    "description": "Generate style.css for perfcat webapp.",
                     "dependencies": ["task_1"],
+                    "target_filename": "style.css",
                 },
                 {
                     "task_id": "task_4",
                     "agent": "codegen-agent",
                     "description": "Generate script.js for perfcat webapp.",
                     "dependencies": ["task_1"],
-                },
-                {
-                    "task_id": "task_5",
-                    "agent": "reviewer-agent",
-                    "description": "Review the generated perfcat app code.",
-                    "dependencies": ["task_2", "task_3", "task_4"],
+                    "target_filename": "script.js",
                 },
             ]
         }
 
+    # Detect whole-project requests by keyword heuristic.
+    # If project_name is set (from API layer), caller should have already triggered per-file plan.
+    # This fallback handles "build a X app" / "create a X" patterns in offline mode.
+    whole_project_keywords = [
+        "build a ", "create a ", "make a ", "scaffold a ", "generate a ",
+        "build an ", "create an ", "make an ",
+    ]
+    is_whole_project = any(kw in feature_request_lower for kw in whole_project_keywords)
+
+    if is_whole_project:
+        # Infer a simple project name from the request.
+        app_name = feature_request.strip().rstrip(".").rstrip("!")
+        return {
+            "feature_request": feature_request,
+            "reasoning": (
+                f"Whole-project request detected: '{app_name}'. "
+                "Scaffolding as separate per-file codegen subtasks with target_filename."
+            ),
+            "subtasks": [
+                {
+                    "task_id": "task_1",
+                    "agent": "codegen-agent",
+                    "description": f"Generate index.html — the main HTML structure for: {app_name}",
+                    "dependencies": [],
+                    "target_filename": "index.html",
+                },
+                {
+                    "task_id": "task_2",
+                    "agent": "codegen-agent",
+                    "description": f"Generate style.css — styling for: {app_name}",
+                    "dependencies": [],
+                    "target_filename": "style.css",
+                },
+                {
+                    "task_id": "task_3",
+                    "agent": "codegen-agent",
+                    "description": f"Generate script.js — all interactivity and logic for: {app_name}",
+                    "dependencies": [],
+                    "target_filename": "script.js",
+                },
+                {
+                    "task_id": "task_4",
+                    "agent": "codegen-agent",
+                    "description": f"Generate README.md — project description and usage instructions for: {app_name}",
+                    "dependencies": [],
+                    "target_filename": "README.md",
+                },
+            ],
+        }
+
     return {
         "feature_request": feature_request,
+        "reasoning": (
+            "Single-feature request: using standard rag → codegen → review pipeline "
+            "to add to the existing project."
+        ),
         "subtasks": [
             {
                 "task_id": "task_1",
@@ -356,31 +435,21 @@ def decompose_offline(feature_request: str) -> dict:
             },
             {
                 "task_id": "task_2",
-                "agent": "db-agent",
+                "agent": "codegen-agent",
                 "description": (
-                    "Generate any required database schema changes or "
-                    "queries based on the retrieved context."
+                    "Generate the implementation code (API endpoints, "
+                    "UI components) based on the documentation context."
                 ),
                 "dependencies": ["task_1"],
             },
             {
                 "task_id": "task_3",
-                "agent": "codegen-agent",
-                "description": (
-                    "Generate the implementation code (API endpoints, "
-                    "UI components) based on the documentation context "
-                    "and database schema."
-                ),
-                "dependencies": ["task_1", "task_2"],
-            },
-            {
-                "task_id": "task_4",
                 "agent": "reviewer-agent",
                 "description": (
                     "Review the generated code for correctness, security, "
                     "and adherence to project standards."
                 ),
-                "dependencies": ["task_3"],
+                "dependencies": ["task_2"],
             },
         ],
     }
