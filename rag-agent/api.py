@@ -66,6 +66,8 @@ class QueryResponse(BaseModel):
     answer: str
     sources: list[str]
     num_chunks_used: int
+    confidence: float = Field(default=0.0, description="Similarity confidence score 0-1")
+    low_confidence: bool = Field(default=True, description="True if confidence < 0.5")
 
 
 # ---------------------------------------------------------------------------

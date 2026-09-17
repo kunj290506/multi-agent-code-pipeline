@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 
-# Default schema and seed data (same as the target-app schema).
+# Schema mirrors target-app/app.py SCHEMA_SQL. Update both if the target-app schema changes.
 DEFAULT_SCHEMA = """\
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,16 +21,30 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT DEFAULT '',
+    owner_id INTEGER,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
     assigned_to INTEGER,
-    priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+    priority TEXT DEFAULT 'medium'
+        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+    project_id INTEGER,
+    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS comments (
@@ -51,16 +65,23 @@ INSERT INTO users (username, email, role) VALUES ('dev_beta', 'dev.beta@example.
 INSERT INTO users (username, email, role) VALUES ('qa_tester', 'qa@example.com', 'member');
 INSERT INTO users (username, email, role) VALUES ('stakeholder', 'stakeholder@example.com', 'viewer');
 
-INSERT INTO tasks (title, description, status, assigned_to, priority) VALUES
-    ('Set up CI/CD pipeline', 'Configure CI/CD workflows.', 'completed', 1, 'high');
-INSERT INTO tasks (title, description, status, assigned_to, priority) VALUES
-    ('Design database schema', 'Create the initial schema.', 'completed', 2, 'critical');
-INSERT INTO tasks (title, description, status, assigned_to, priority) VALUES
-    ('Implement user authentication', 'Add JWT authentication.', 'in_progress', 2, 'high');
-INSERT INTO tasks (title, description, status, assigned_to, priority) VALUES
-    ('Build task list UI', 'Create a React component for tasks.', 'in_progress', 3, 'medium');
-INSERT INTO tasks (title, description, status, assigned_to, priority) VALUES
-    ('Write API integration tests', 'Cover all REST endpoints.', 'pending', 4, 'high');
+INSERT INTO projects (name, description, owner_id, status) VALUES
+    ('Infrastructure', 'Platform and DevOps work.', 1, 'active');
+INSERT INTO projects (name, description, owner_id, status) VALUES
+    ('Backend', 'API and database development.', 2, 'active');
+INSERT INTO projects (name, description, owner_id, status) VALUES
+    ('Frontend', 'UI and client-side work.', 3, 'active');
+
+INSERT INTO tasks (title, description, status, assigned_to, priority, project_id) VALUES
+    ('Set up CI/CD pipeline', 'Configure CI/CD workflows.', 'completed', 1, 'high', 1);
+INSERT INTO tasks (title, description, status, assigned_to, priority, project_id) VALUES
+    ('Design database schema', 'Create the initial schema.', 'completed', 2, 'critical', 2);
+INSERT INTO tasks (title, description, status, assigned_to, priority, project_id) VALUES
+    ('Implement user authentication', 'Add JWT authentication.', 'in_progress', 2, 'high', 2);
+INSERT INTO tasks (title, description, status, assigned_to, priority, project_id) VALUES
+    ('Build task list UI', 'Create a React component for tasks.', 'in_progress', 3, 'medium', 3);
+INSERT INTO tasks (title, description, status, assigned_to, priority, project_id) VALUES
+    ('Write API integration tests', 'Cover all REST endpoints.', 'pending', 4, 'high', 2);
 
 INSERT INTO comments (task_id, user_id, content) VALUES
     (1, 2, 'Pipeline configuration is complete.');

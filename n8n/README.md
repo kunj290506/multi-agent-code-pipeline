@@ -29,7 +29,7 @@ Webhook (POST /feature-request)
    |           |           |           |
    v           v           v           v
 RAG Agent   CodeGen     Reviewer    DB Agent
-(port 8001) (port 8003) (port 8004) (port 8002)
+(port 8011) (port 8014) (port 8015) (port 8012)
    |           |           |           |
    +-----------+-----------+-----------+
         |
@@ -43,35 +43,44 @@ RAG Agent   CodeGen     Reviewer    DB Agent
   Webhook Response
 ```
 
+The CodeGen path expands into a full retry branch described in the
+[CodeGen → Reviewer Retry Branch](#codegen--reviewer-retry-branch) section below.
+
 ---
 
 ## Workflow Nodes
 
-| Node                          | Type         | Description                                       |
-|-------------------------------|--------------|---------------------------------------------------|
-| Webhook Trigger               | Webhook      | Receives POST requests at `/feature-request`      |
-| Call Planner Agent            | HTTP Request | Calls planner at `http://host.docker.internal:8000/plan` |
-| Parse Plan Response           | Code         | Extracts subtasks from the planner response       |
-| Split Subtasks                | Code         | Creates one workflow item per subtask              |
-| Route to Agent                | Switch       | Routes each subtask to the correct agent by name  |
-| Call RAG Agent                | HTTP Request | `POST http://host.docker.internal:8001/query`     |
-| Call CodeGen Agent (Placeholder)| HTTP Request | `POST http://host.docker.internal:8003/generate` |
-| Call Reviewer Agent (Placeholder)| HTTP Request | `POST http://host.docker.internal:8004/review` |
-| Call DB Agent                 | HTTP Request | `POST http://host.docker.internal:8002/generate`  |
-| Aggregate Results             | Code         | Collects all agent responses                       |
-| Log Pipeline Results          | Code         | Creates a pipeline run log entry                   |
+| Node                          | Type         | Description                                                             |
+|-------------------------------|--------------|-------------------------------------------------------------------------|
+| Webhook Trigger               | Webhook      | Receives POST requests at `/feature-request`                           |
+| Call Planner Agent            | HTTP Request | Calls planner at `http://host.docker.internal:8010/plan`               |
+| Parse Plan Response           | Code         | Extracts subtasks from the planner response                            |
+| Split Subtasks                | Code         | Creates one workflow item per subtask                                   |
+| Route to Agent                | Switch       | Routes each subtask to the correct agent by name                       |
+| Call RAG Agent                | HTTP Request | `POST http://host.docker.internal:8011/query`                          |
+| Call CodeGen Agent            | HTTP Request | `POST http://host.docker.internal:8014/generate` (first attempt)       |
+| Call Reviewer Post-CodeGen    | HTTP Request | `POST http://host.docker.internal:8015/review` (first-attempt review)  |
+| Check Verdict                 | Switch       | Routes on `verdict`: output 0 = pass, output 1 = fail                  |
+| Retry CodeGen with Issues     | HTTP Request | `POST http://host.docker.internal:8014/generate` with `prior_issues`   |
+| Post-Retry Reviewer           | HTTP Request | `POST http://host.docker.internal:8015/review` (second-attempt review) |
+| Merge CodeGen Results         | Merge        | Combines the pass path and the retry path before aggregation           |
+| Call Reviewer Agent           | HTTP Request | Standalone reviewer for subtasks routed directly to `reviewer-agent`   |
+| Call DB Agent                 | HTTP Request | `POST http://host.docker.internal:8012/generate`                       |
+| Aggregate Results             | Code         | Collects all agent responses                                           |
+| Log Pipeline Results          | Code         | Creates a pipeline run log entry                                        |
 
 ---
 
 ## Agent Port Mapping
 
-| Agent            | Port | Status      |
-|------------------|------|-------------|
-| Planner Agent    | 8000 | Implemented |
-| RAG Agent        | 8001 | Implemented |
-| DB Agent         | 8002 | Implemented |
-| CodeGen Agent    | 8003 | Placeholder |
-| Reviewer Agent   | 8004 | Placeholder |
+| Agent             | Port | Status      |
+|-------------------|------|-------------|
+| Planner Agent     | 8010 | Implemented |
+| RAG Agent         | 8011 | Implemented |
+| DB Agent (query)  | 8012 | Implemented |
+| DB Agent (exec)   | 8013 | Implemented |
+| CodeGen Agent     | 8014 | Implemented |
+| Reviewer Agent    | 8015 | Implemented |
 
 ---
 
@@ -130,6 +139,72 @@ cd rag-agent && python api.py
 # Terminal 3: DB Agent
 cd db-agent && python api.py
 ```
+
+---
+
+## CodeGen → Reviewer Retry Branch
+
+When a `codegen-agent` subtask is executed in n8n, the workflow runs a two-attempt
+retry loop before handing results to the aggregation step:
+
+```
+Call CodeGen Agent (first attempt)
+        |
+        v
+Call Reviewer Post-CodeGen
+        |
+        v
+  Check Verdict (Switch)
+     |          |
+   pass        fail
+     |          |
+     v          v
+     |    Retry CodeGen with Issues
+     |    (prior_issues forwarded in body)
+     |          |
+     |          v
+     |    Post-Retry Reviewer
+     |          |
+     +-----------+
+           |
+           v
+   Merge CodeGen Results
+           |
+           v
+   Aggregate Results
+```
+
+### What triggers a retry
+
+The **Check Verdict** Switch node evaluates `$json.verdict` from the first reviewer
+response. A `"fail"` verdict routes execution to the retry path; a `"pass"` verdict
+skips straight to the Merge node.
+
+### What data is forwarded on retry
+
+The **Retry CodeGen with Issues** node sends the full `issues` array from the first
+review to the code-gen agent as `prior_issues`. This gives the LLM complete context
+about every reported problem so it can address them all in a single regeneration
+attempt.
+
+### How the Merge node collects both paths
+
+**Merge CodeGen Results** (mode: `combine`, `mergeByPosition`) has two inputs:
+
+- **Input 0** — receives the first-attempt reviewer result directly from Check Verdict
+  output 0 (the pass path).
+- **Input 1** — receives the post-retry reviewer result from Post-Retry Reviewer.
+
+Because n8n's merge-by-position mode waits for both inputs before emitting,
+whichever path was taken determines which input carries data. The node then
+passes the combined item to Aggregate Results.
+
+### Writing the file after retry
+
+Post-retry code is always written to `target-app/` regardless of the second
+reviewer verdict. This matches the `"exhausted"` verdict behaviour in the Python
+orchestrator: after the retry budget is consumed the code is persisted so the
+user can inspect it even if it did not achieve a clean pass.
 
 ---
 

@@ -96,6 +96,8 @@ def query(question: str, top_k: int = 5) -> dict:
         - answer: the model's response
         - sources: list of source references used
         - num_chunks_used: number of context chunks sent to the model
+        - confidence: max similarity score across retrieved chunks (0–1)
+        - low_confidence: True if confidence < 0.5
     """
     vector_store = load_vector_store()
     context_items = retrieve_context(vector_store, question, top_k=top_k)
@@ -106,6 +108,8 @@ def query(question: str, top_k: int = 5) -> dict:
             "answer": "No relevant documentation was found in the vector store.",
             "sources": [],
             "num_chunks_used": 0,
+            "confidence": 0.0,
+            "low_confidence": True,
         }
 
     answer = generate_answer(question, context_items)
@@ -115,11 +119,18 @@ def query(question: str, top_k: int = 5) -> dict:
         for item in context_items
     })
 
+    # Confidence is the MAX relevance score across retrieved chunks (0–1).
+    scores = [item.get("relevance_score", 0.0) for item in context_items]
+    confidence = round(max(scores), 4) if scores else 0.0
+    low_confidence = confidence < 0.5
+
     return {
         "question": question,
         "answer": answer,
         "sources": sorted(sources),
         "num_chunks_used": len(context_items),
+        "confidence": confidence,
+        "low_confidence": low_confidence,
     }
 
 

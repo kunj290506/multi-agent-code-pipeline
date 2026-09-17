@@ -2,19 +2,20 @@
 RAG Agent -- Test Script.
 
 This script validates the end-to-end RAG pipeline:
-1. Ingestion: reads sample documents, chunks them, stores embeddings.
+1. Ingestion: reads source documents, chunks them, stores embeddings.
 2. Retrieval: performs similarity searches against the vector store.
 3. Query (offline): tests the query construction without requiring Ollama.
 
 Run with:
     python test_rag.py
 
-The script uses the sample_docs/ directory as a stand-in for target-app/.
+Source documents are written to a temporary directory at test startup so
+the test is fully self-contained and does not depend on sample_docs/ or
+the real target-app/ directory.
 Tests that require the Ollama server are clearly marked and will be skipped
 if the server is unreachable.
 """
 
-import json
 import os
 import shutil
 import sys
@@ -28,13 +29,79 @@ import config  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test configuration -- use a temporary Chroma directory so we don't pollute
-# the real vector store.
+# the real vector store, and write minimal synthetic source docs so the test
+# has no dependency on sample_docs/ (deleted) or target-app/.
 # ---------------------------------------------------------------------------
 _TEMP_DIR = tempfile.mkdtemp(prefix="rag_test_")
 config.CHROMA_PERSIST_DIR = os.path.join(_TEMP_DIR, "chroma")
 config.CHROMA_COLLECTION_NAME = "test_collection"
 
-SAMPLE_DOCS_DIR = os.path.join(os.path.dirname(__file__), "sample_docs")
+# Synthetic source documents written into the temp dir.
+_DOCS_DIR = os.path.join(_TEMP_DIR, "docs")
+os.makedirs(_DOCS_DIR, exist_ok=True)
+
+_SYNTHETIC_DOCS = {
+    "app.py": """\
+\"\"\"Task Manager REST API.\"\"\"
+import sqlite3
+from fastapi import FastAPI, HTTPException
+app = FastAPI(title="Task Manager API")
+DATABASE_PATH = "./taskmanager.db"
+
+# Users table: id, username, email, role, created_at
+# Tasks table: id, title, description, status, assigned_to, priority, project_id
+
+@app.get("/users")
+def list_users():
+    \"\"\"Return all users.\"\"\"
+    with sqlite3.connect(DATABASE_PATH) as conn:
+        rows = conn.execute("SELECT * FROM users ORDER BY id").fetchall()
+    return rows
+
+@app.post("/users")
+def create_user(username: str, email: str, role: str = "member"):
+    \"\"\"Create a new user with default role member.\"\"\"
+    with sqlite3.connect(DATABASE_PATH) as conn:
+        conn.execute("INSERT INTO users (username, email, role) VALUES (?, ?, ?)",
+                     (username, email, role))
+        conn.commit()
+
+@app.get("/tasks")
+def list_tasks(status: str = None, priority: str = None):
+    \"\"\"Return all tasks, filtered by status or priority.\"\"\"
+    return []
+""",
+    "README.md": """\
+# Task Manager API
+
+REST API for managing users, tasks, and projects.
+
+## Database
+Uses SQLite. Database path: ./taskmanager.db
+
+## Endpoints
+- GET /users — list all users
+- POST /users — create user (fields: username, email, role)
+- GET /tasks — list tasks (query params: status, priority)
+- POST /tasks — create task
+- GET /projects — list projects
+
+## Schema
+### users
+- id, username (unique), email (unique), role (admin/member/viewer), created_at
+
+### tasks
+- id, title, description, status (pending/in_progress/completed/cancelled),
+  assigned_to (FK users.id), priority (low/medium/high/critical),
+  project_id (FK projects.id), created_at, updated_at
+""",
+}
+
+for fname, content in _SYNTHETIC_DOCS.items():
+    with open(os.path.join(_DOCS_DIR, fname), "w", encoding="utf-8") as _fh:
+        _fh.write(content)
+
+SAMPLE_DOCS_DIR = _DOCS_DIR
 
 # Expected test questions and the keywords we expect in the retrieved context.
 TEST_CASES = [

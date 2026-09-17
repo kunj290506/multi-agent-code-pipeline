@@ -30,6 +30,25 @@ except ImportError:
     sys.exit(1)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Model Menu — choose based on your available VRAM / RAM
+#
+#  Model                           RAM Required   Notes
+#  ──────────────────────────────  ─────────────  ───────────────────────────────
+#  qwen2.5:7b-instruct-q4_K_M      ~4.7 GB        DEFAULT — balanced quality/speed
+#  mistral:7b-instruct-q4_K_M      ~4.1 GB        Smaller alternative
+#  llama3.1:8b                     ~5.0 GB        Larger alternative
+#
+#  Embedding model (RAG only):
+#  all-MiniLM-L6-v2                ~90 MB         Handled by sentence-transformers,
+#                                                  NOT pulled via Ollama.
+#                                                  Downloaded automatically on first
+#                                                  rag-agent startup.
+#
+#  To use an alternative model run:
+#    python ollama-setup.py --model mistral:7b-instruct-q4_K_M
+# ─────────────────────────────────────────────────────────────────────────────
+
 DEFAULT_MODEL = "qwen2.5:7b-instruct-q4_K_M"
 DEFAULT_HOST = "http://localhost:11434"
 PULL_TIMEOUT_SECONDS = 600

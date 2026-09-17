@@ -25,8 +25,39 @@ API_HOST: str = os.getenv("DB_AGENT_HOST", "0.0.0.0")
 API_PORT: int = int(os.getenv("DB_AGENT_PORT", "8012"))
 
 # ---------------------------------------------------------------------------
-# Placeholder database schema for query generation
+# Database schema description for query generation
+# Schema mirrors target-app/app.py SCHEMA_SQL exactly.
+# Update both locations if the target-app schema changes.
 # ---------------------------------------------------------------------------
+DEFAULT_SCHEMA = {
+    "users": {
+        "columns": ["id", "username", "email", "role", "created_at"],
+        "description": "Application users with roles: admin, member, viewer",
+        "primary_key": "id",
+    },
+    "projects": {
+        "columns": ["id", "name", "description", "owner_id", "status", "created_at"],
+        "description": "Projects grouping related tasks. status: active, archived. owner_id FK -> users.id",
+        "primary_key": "id",
+        "foreign_keys": ["owner_id -> users.id"],
+    },
+    "tasks": {
+        "columns": ["id", "title", "description", "status", "assigned_to", "priority", "created_at", "updated_at", "project_id"],
+        "description": "Tasks with status: pending, in_progress, completed, cancelled. priority: low, medium, high, critical. assigned_to FK -> users.id. project_id FK -> projects.id",
+        "primary_key": "id",
+        "foreign_keys": ["assigned_to -> users.id", "project_id -> projects.id"],
+    },
+    "comments": {
+        "columns": ["id", "task_id", "user_id", "content", "created_at"],
+        "description": "Comments on tasks. task_id FK -> tasks.id. user_id FK -> users.id",
+        "primary_key": "id",
+        "foreign_keys": ["task_id -> tasks.id", "user_id -> users.id"],
+    },
+}
+
+# SQL DDL representation — used by query_generator and the /schema endpoint.
+# Schema mirrors target-app/app.py SCHEMA_SQL exactly.
+# Update both locations if the target-app schema changes.
 PLACEHOLDER_SCHEMA: str = """
 -- Users table
 CREATE TABLE users (
@@ -37,17 +68,32 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Projects table
+CREATE TABLE projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT DEFAULT '',
+    owner_id INTEGER,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- Tasks table
 CREATE TABLE tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
     assigned_to INTEGER,
-    priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+    priority TEXT DEFAULT 'medium'
+        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+    project_id INTEGER,
+    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
 );
 
 -- Comments table

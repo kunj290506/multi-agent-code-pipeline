@@ -173,6 +173,113 @@
         "url": "http://host.docker.internal:8015/review",
         "sendBody": true,
         "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ artifact: $json.artifact || {}, code: ($json.artifact || {}).code || '' }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "call-reviewer-post-codegen",
+      "name": "Call Reviewer Post-CodeGen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1720, 280]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "outputIndex": 0,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.verdict }}",
+                    "rightValue": "pass",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "outputIndex": 1,
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.verdict }}",
+                    "rightValue": "fail",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-verdict",
+      "name": "Check Verdict",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1960, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8014/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $json.description, context: $json.context || '', prior_issues: $json.issues || [] }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "retry-codegen",
+      "name": "Retry CodeGen with Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8015/review",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ artifact: $json.artifact || {}, code: ($json.artifact || {}).code || '' }) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "post-retry-reviewer",
+      "name": "Post-Retry Reviewer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 380]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-codegen-results",
+      "name": "Merge CodeGen Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2680, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8015/review",
+        "sendBody": true,
+        "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ code: $json.code || '', description: $json.description }) }}",
         "options": {
           "timeout": 180000
@@ -210,7 +317,7 @@
       "name": "Aggregate Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1740, 300]
+      "position": [2920, 300]
     },
     {
       "parameters": {
@@ -221,7 +328,7 @@
       "name": "Log Pipeline Results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 300]
+      "position": [3160, 300]
     }
   ],
   "connections": {
@@ -313,6 +420,68 @@
       ]
     },
     "Call CodeGen Agent (Placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Call Reviewer Post-CodeGen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Reviewer Post-CodeGen": {
+      "main": [
+        [
+          {
+            "node": "Check Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Verdict": {
+      "main": [
+        [
+          {
+            "node": "Merge CodeGen Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry CodeGen with Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry CodeGen with Issues": {
+      "main": [
+        [
+          {
+            "node": "Post-Retry Reviewer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-Retry Reviewer": {
+      "main": [
+        [
+          {
+            "node": "Merge CodeGen Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge CodeGen Results": {
       "main": [
         [
           {
