@@ -165,5 +165,6 @@ webapp/backend/backend.log
 webapp/backend/test_cookies.txt
 
 # -- Generated project workspaces (created at runtime by /runs) -------
-projects/
+# Use projects/** (not projects/) so the !exception below can override the parent
+projects/**
 !projects/.gitkeep
