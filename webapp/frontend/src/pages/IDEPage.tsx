@@ -166,6 +166,7 @@ export default function IDEPage() {
             selectedPath={selectedFile}
             onSelect={setSelectedFile}
             refreshTrigger={explorerRefresh}
+            projectId={activeRunId ?? undefined}
           />
         </div>
 

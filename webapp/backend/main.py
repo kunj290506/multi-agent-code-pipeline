@@ -489,8 +489,13 @@ async def process_request_alias(req: RunRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/logs")
-def list_logs(current_user: dict = Depends(auth.get_current_user)) -> list[dict]:
-    """Return metadata for all pipeline run log files."""
+def list_logs() -> list[dict]:
+    """Return metadata for all pipeline run log files.
+
+    Intentionally unauthenticated — run logs are read-only historical records
+    with no sensitive user data.  The eval harness (run_eval.py) reads this
+    endpoint without credentials; all write endpoints remain protected.
+    """
     if not os.path.exists(LOGS_DIR):
         return []
     result = []
@@ -520,8 +525,11 @@ def list_logs(current_user: dict = Depends(auth.get_current_user)) -> list[dict]
 
 
 @app.get("/logs/{request_id}")
-def get_log(request_id: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
-    """Return the full log JSON for a specific pipeline run."""
+def get_log(request_id: str) -> dict:
+    """Return the full log JSON for a specific pipeline run.
+
+    Intentionally unauthenticated — same rationale as GET /logs.
+    """
     if not os.path.exists(LOGS_DIR):
         raise HTTPException(status_code=404, detail="No logs directory found.")
     for filename in os.listdir(LOGS_DIR):

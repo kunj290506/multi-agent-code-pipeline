@@ -106,5 +106,15 @@
     "difficulty": "easy",
     "adversarial": true,
     "notes": "ADVERSARIAL SCHEMA: Empty feature_request string. Input validation in webapp backend should reject this before the pipeline starts (Pydantic min_length=1 constraint). Expected HTTP 422."
+  },
+  {
+    "id": "E13",
+    "feature_request": "I want a simple calculator web app",
+    "project_name": "calculator-regression",
+    "expected_agents": ["planner-agent", "codegen-agent", "reviewer-agent"],
+    "expected_verdict": "pass",
+    "difficulty": "medium",
+    "adversarial": false,
+    "notes": "REGRESSION: whole-project request that previously failed. Planner must decompose into per-file subtasks with target_filename. CodeGen must produce real HTML/CSS/JS artifacts (not Python boilerplate) for each file. Each file is gated through Reviewer. Project auto-run should open a working calculator in a new tab."
   }
 ]
