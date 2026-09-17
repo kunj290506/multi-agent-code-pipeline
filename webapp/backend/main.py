@@ -36,12 +36,17 @@ import json
 import logging
 import os
 import shutil
+import signal as _signal
+import socket
+import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import auth
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -68,6 +73,11 @@ LOGS_DIR: str = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "logs")
 )
 
+# Project workspaces root: each named project gets its own sub-directory here.
+PROJECTS_DIR: str = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "projects")
+)
+
 AGENT_URLS: dict[str, str] = {
     "planner-agent": "http://localhost:8010/plan",
     "rag-agent": "http://localhost:8011/query",
@@ -92,11 +102,19 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth.router)
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    """Initialise the auth users DB on server startup."""
+    auth.init_db()
 
 # ---------------------------------------------------------------------------
 # In-memory stores
@@ -117,6 +135,9 @@ cancel_flags: dict[str, bool] = {}
 # Each dict is a raw event payload; None sentinel closes the stream.
 sse_queues: dict[str, asyncio.Queue] = {}
 
+# Running project processes: project_id -> {pid, port, url, type, process}
+running_processes: dict[str, dict[str, Any]] = {}
+
 # ---------------------------------------------------------------------------
 # WebSocket management (legacy, kept for backwards compat)
 # ---------------------------------------------------------------------------
@@ -124,6 +145,8 @@ sse_queues: dict[str, asyncio.Queue] = {}
 active_connections: list[WebSocket] = []
 
 
+# NOTE: /ws is intentionally left unprotected — WebSockets cannot reliably
+# send HttpOnly cookies in all browsers without additional handshake logic.
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """Accept a WebSocket connection for real-time pipeline updates."""
@@ -178,8 +201,12 @@ def _sse_format(data: dict) -> str:
 # Live-state helpers
 # ---------------------------------------------------------------------------
 
-def _init_run_state(request_id: str, feature_request: str) -> dict:
-    """Create and register the initial live state for a new run."""
+def _init_run_state(request_id: str, feature_request: str, workspace_dir: str | None = None) -> dict:
+    """Create and register the initial live state for a new run.
+
+    workspace_dir: absolute path to the project workspace for this run.
+    If None, uses the default target-app/ directory.
+    """
     state: dict[str, Any] = {
         "request_id": request_id,
         "feature_request": feature_request,
@@ -188,6 +215,8 @@ def _init_run_state(request_id: str, feature_request: str) -> dict:
         "status": "running",
         "total_duration_ms": None,
         "steps": [],
+        # Workspace dir this run writes files into (None = default target-app/)
+        "workspace_dir": workspace_dir,
     }
     run_states[request_id] = state
     cancel_flags[request_id] = False
@@ -233,7 +262,11 @@ async def _push_step(request_id: str, step: dict) -> None:
 
 
 async def _finalize_run(request_id: str, status: str) -> None:
-    """Mark a run complete, compute total_duration_ms, write log, push SSE close."""
+    """Mark a run complete, compute total_duration_ms, write log, push SSE close.
+
+    If the run has a project workspace and status is 'success', also pushes a
+    'project_ready' SSE event so the frontend can trigger auto-run/preview.
+    """
     state = run_states.get(request_id)
     if state is None:
         return
@@ -254,6 +287,18 @@ async def _finalize_run(request_id: str, status: str) -> None:
         "status": status,
         "total_duration_ms": state["total_duration_ms"],
     })
+    # If this was a named project run that succeeded, tell the frontend it's ready to run.
+    if status == "success" and state.get("workspace_dir"):
+        await _sse_push(request_id, {
+            "type": "project_ready",
+            "request_id": request_id,
+            "workspace_dir": state["workspace_dir"],
+        })
+        await broadcast({
+            "type": "project_ready",
+            "request_id": request_id,
+            "workspace_dir": state["workspace_dir"],
+        })
     await _sse_close(request_id)
     await broadcast({"type": "done", "request_id": request_id, "status": status})
 
@@ -265,6 +310,14 @@ async def _finalize_run(request_id: str, status: str) -> None:
 class RunRequest(BaseModel):
     """Request body for POST /runs (and POST /request alias)."""
     request: str = Field(..., min_length=1, description="Feature request in plain language.")
+    project_name: str | None = Field(
+        default=None,
+        description=(
+            "Optional project name.  When provided, the pipeline creates a fresh "
+            "workspace directory under projects/{project_name}_{request_id}/ and "
+            "writes all generated files there instead of the default target-app/."
+        ),
+    )
 
 # Alias kept for backwards compat.
 FeatureRequest = RunRequest
@@ -296,7 +349,7 @@ def health_check() -> dict:
 
 
 @app.get("/history")
-def get_history() -> list[dict]:
+def get_history(current_user: dict = Depends(auth.get_current_user)) -> list[dict]:
     """Return the list of past pipeline runs (in-memory)."""
     return run_history
 
@@ -306,23 +359,40 @@ def get_history() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 @app.post("/runs", status_code=202)
-async def start_run(req: RunRequest) -> dict:
+async def start_run(req: RunRequest, current_user: dict = Depends(auth.get_current_user)) -> dict:
     """Start a new pipeline run and return immediately with the request_id.
 
     The pipeline executes asynchronously.  Poll GET /runs/{id}/status or
     stream GET /runs/{id}/events to observe progress.
+
+    If req.project_name is set, a fresh workspace directory is created under
+    projects/{safe_name}_{request_id}/ and used instead of the default target-app/.
     """
     request_id = os.urandom(4).hex()
-    state = _init_run_state(request_id, req.request)
+
+    # Resolve workspace directory.
+    workspace_dir: str | None = None
+    if req.project_name:
+        # Sanitise project name: keep alphanumeric, hyphens, underscores only.
+        safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in req.project_name)
+        workspace_dir = os.path.join(PROJECTS_DIR, f"{safe_name}_{request_id}")
+        os.makedirs(workspace_dir, exist_ok=True)
+        logger.info("Created project workspace: %s", workspace_dir)
+
+    state = _init_run_state(request_id, req.request, workspace_dir=workspace_dir)
     run_history.append(state)
     # Fire the pipeline as a background task so this endpoint returns immediately.
     asyncio.create_task(_run_pipeline(request_id, req.request))
     await broadcast({"type": "start", "request_id": request_id, "request": req.request})
-    return {"request_id": request_id, "status": "accepted"}
+    return {
+        "request_id": request_id,
+        "status": "accepted",
+        "workspace_dir": workspace_dir,
+    }
 
 
 @app.post("/runs/{request_id}/cancel")
-async def cancel_run(request_id: str) -> dict:
+async def cancel_run(request_id: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
     """Request cancellation of an in-flight run.
 
     Sets a cancellation flag that is checked at each step boundary before the
@@ -341,7 +411,7 @@ async def cancel_run(request_id: str) -> dict:
 
 
 @app.get("/runs/{request_id}/status")
-def get_run_status(request_id: str) -> dict:
+def get_run_status(request_id: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
     """Return the current live state of a run (poll at ~1–2 s intervals).
 
     Returns a full snapshot: status, steps so far (each with real agent
@@ -355,7 +425,7 @@ def get_run_status(request_id: str) -> dict:
 
 
 @app.get("/runs/{request_id}/events")
-async def run_events(request_id: str) -> StreamingResponse:
+async def run_events(request_id: str, current_user: dict = Depends(auth.get_current_user)) -> StreamingResponse:
     """SSE stream of live step events for a run.
 
     Each event is a JSON-encoded dict with a 'type' field:
@@ -419,7 +489,7 @@ async def process_request_alias(req: RunRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/logs")
-def list_logs() -> list[dict]:
+def list_logs(current_user: dict = Depends(auth.get_current_user)) -> list[dict]:
     """Return metadata for all pipeline run log files."""
     if not os.path.exists(LOGS_DIR):
         return []
@@ -450,7 +520,7 @@ def list_logs() -> list[dict]:
 
 
 @app.get("/logs/{request_id}")
-def get_log(request_id: str) -> dict:
+def get_log(request_id: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
     """Return the full log JSON for a specific pipeline run."""
     if not os.path.exists(LOGS_DIR):
         raise HTTPException(status_code=404, detail="No logs directory found.")
@@ -516,6 +586,8 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
     subtasks = plan.get("subtasks", [])
     context_str = ""
     last_codegen_artifact: dict | None = None
+    # Workspace directory for this run (project-scoped or default target-app/).
+    workspace = _get_workspace(request_id)
 
     # -- Step 2: Execute subtasks ----------------------------------------------
     for task in subtasks:
@@ -537,7 +609,7 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
 
         try:
             if agent == "system":
-                await _handle_system_task(desc)
+                await _handle_system_task(desc, workspace=workspace)
                 step = _step_record("system", "done", input_summary=desc)
                 await _push_step(request_id, step)
 
@@ -613,7 +685,8 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
                 final_verdict = review_res.get("final_verdict", "unknown")
                 artifact = codegen_res.get("artifact", {})
                 last_codegen_artifact = artifact
-                filename = _resolve_filename(artifact, desc)
+                # Resolve filename: task target_filename takes precedence.
+                filename = _resolve_filename(artifact, desc, task=task)
                 code = artifact.get("code")
 
                 # Steps are appended inside _run_codegen_with_review already;
@@ -625,12 +698,12 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
                 })
 
                 if code and final_verdict in ("pass", "exhausted"):
-                    _write_to_target_app(filename, code)
+                    _write_to_workspace(filename, code, workspace)
                     await broadcast({
                         "type": "log", "agent": "System",
                         "message": f"Wrote {filename} (verdict: {final_verdict})",
                     })
-                    await broadcast({"type": "file_update", "filename": filename, "path": _target_path(filename)})
+                    await broadcast({"type": "file_update", "filename": filename, "path": os.path.join(workspace, filename)})
                 elif final_verdict == "fail":
                     await broadcast({
                         "type": "log", "agent": "System",
@@ -776,27 +849,48 @@ async def _run_codegen_with_review(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _target_path(filename: str) -> str:
-    return os.path.join(TARGET_APP_DIR, filename)
+def _get_workspace(request_id: str) -> str:
+    """Return the workspace directory for this run (project dir or default target-app)."""
+    state = run_states.get(request_id, {})
+    return state.get("workspace_dir") or TARGET_APP_DIR
 
 
-def _write_to_target_app(filename: str, content: str) -> None:
-    path = _target_path(filename)
+def _target_path(filename: str, workspace: str | None = None) -> str:
+    return os.path.join(workspace or TARGET_APP_DIR, filename)
+
+
+def _write_to_workspace(filename: str, content: str, workspace: str) -> None:
+    """Write content to filename inside the given workspace directory."""
+    path = os.path.join(workspace, filename)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(content)
     logger.info("Wrote file: %s", path)
 
 
-def _resolve_filename(artifact: dict, description: str) -> str:
+def _resolve_filename(artifact: dict, description: str, task: dict | None = None) -> str:
+    """Resolve the output filename.
+
+    Priority:
+    1. task['target_filename'] — set by Planner for per-file whole-project subtasks
+    2. artifact['filename']    — set by CodeGen agent
+    3. Heuristic from description text (legacy fallback)
+    """
+    # 1. Planner-set target filename (most authoritative)
+    if task and task.get("target_filename"):
+        return task["target_filename"]
+    # 2. CodeGen-set filename
     filename = artifact.get("filename") or artifact.get("name", "generated.py")
+    # 3. Legacy description heuristic
     desc_lower = description.lower()
-    if "html" in desc_lower:
+    if "index.html" in desc_lower or ("html" in desc_lower and "index" in desc_lower):
         filename = "index.html"
-    elif "css" in desc_lower:
-        filename = "styles.css"
-    elif "js" in desc_lower or "script.js" in desc_lower:
+    elif "style.css" in desc_lower or "styles.css" in desc_lower:
+        filename = artifact.get("filename") or "style.css"
+    elif "script.js" in desc_lower:
         filename = "script.js"
+    elif "readme" in desc_lower:
+        filename = "README.md"
     return filename
 
 
@@ -816,12 +910,16 @@ async def _run_reviewer_gate(artifact: dict) -> dict:
         }
 
 
-async def _handle_system_task(description: str) -> None:
-    """Handle system-level tasks such as project directory cleanup."""
-    if not os.path.exists(TARGET_APP_DIR):
+async def _handle_system_task(description: str, workspace: str | None = None) -> None:
+    """Handle system-level tasks such as project directory cleanup.
+
+    Cleans the given workspace directory (or default target-app/ if not specified).
+    """
+    target = workspace or TARGET_APP_DIR
+    if not os.path.exists(target):
         return
-    for filename in os.listdir(TARGET_APP_DIR):
-        file_path = os.path.join(TARGET_APP_DIR, filename)
+    for filename in os.listdir(target):
+        file_path = os.path.join(target, filename)
         try:
             if os.path.isfile(file_path) or os.path.islink(file_path):
                 os.unlink(file_path)
@@ -864,22 +962,40 @@ def _get_dir_structure(path: str) -> dict:
 
 
 @app.get("/files")
-def get_files() -> dict:
-    """Return the directory tree of target-app/."""
-    if not os.path.exists(TARGET_APP_DIR):
-        os.makedirs(TARGET_APP_DIR, exist_ok=True)
-    return _get_dir_structure(TARGET_APP_DIR)
+def get_files(
+    project_id: str | None = None,
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict:
+    """Return the directory tree for a workspace.
+
+    If project_id is provided and matches a known run, returns that run's
+    workspace tree.  Otherwise returns the default target-app/ tree.
+    """
+    if project_id and project_id in run_states:
+        target = run_states[project_id].get("workspace_dir") or TARGET_APP_DIR
+    else:
+        target = TARGET_APP_DIR
+    if not os.path.exists(target):
+        os.makedirs(target, exist_ok=True)
+    return _get_dir_structure(target)
 
 
 @app.get("/file")
-def get_file_content(path: str) -> dict:
-    """Return the text content of a file inside target-app/."""
+def get_file_content(path: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
+    """Return the text content of a file.
+
+    Path must be inside target-app/ OR inside any registered project workspace.
+    """
     resolved = os.path.realpath(path)
-    allowed_root = os.path.realpath(TARGET_APP_DIR)
-    if not resolved.startswith(allowed_root):
+    allowed_roots = [os.path.realpath(TARGET_APP_DIR), os.path.realpath(PROJECTS_DIR)]
+
+    def _is_allowed(p: str) -> bool:
+        return any(p.startswith(root) for root in allowed_roots)
+
+    if not _is_allowed(resolved):
         raise HTTPException(
             status_code=403,
-            detail="Access denied: path is outside the target-app directory.",
+            detail="Access denied: path is outside an allowed workspace.",
         )
     try:
         with open(resolved, "r", encoding="utf-8") as fh:
@@ -888,6 +1004,271 @@ def get_file_content(path: str) -> dict:
         raise HTTPException(status_code=404, detail="File not found.")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/projects")
+def list_projects(current_user: dict = Depends(auth.get_current_user)) -> list[dict]:
+    """Return a list of all project workspaces created by named runs.
+
+    Each entry contains: request_id, workspace_dir, feature_request, status, file_count.
+    """
+    result: list[dict] = []
+    for rid, state in run_states.items():
+        wdir = state.get("workspace_dir")
+        if not wdir:
+            continue
+        file_count = 0
+        if os.path.exists(wdir):
+            for _, _, files in os.walk(wdir):
+                file_count += len(files)
+        result.append({
+            "request_id": rid,
+            "workspace_dir": wdir,
+            "feature_request": state.get("feature_request", ""),
+            "status": state.get("status", "unknown"),
+            "file_count": file_count,
+        })
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Project auto-run helpers
+# ---------------------------------------------------------------------------
+
+def _find_free_port() -> int:
+    """Bind to port 0 to get a free ephemeral port from the OS."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _detect_project_type(workspace_dir: str) -> dict:
+    """Detect how to run the project in workspace_dir.
+
+    Returns a dict with keys:
+      runnable (bool), type (str), reason (str | None),
+      command (list[str] | None), cwd (str)
+    """
+    files = set(os.listdir(workspace_dir)) if os.path.isdir(workspace_dir) else set()
+
+    # Static HTML — serve with Python http.server
+    if "index.html" in files and "package.json" not in files:
+        return {
+            "runnable": True,
+            "type": "static",
+            "reason": None,
+            "command": None,  # built dynamically with port
+            "cwd": workspace_dir,
+        }
+
+    # Node.js / npm project
+    if "package.json" in files:
+        pkg_path = os.path.join(workspace_dir, "package.json")
+        try:
+            with open(pkg_path, encoding="utf-8") as fh:
+                pkg = json.load(fh)
+            scripts = pkg.get("scripts", {})
+            script = "dev" if "dev" in scripts else "start" if "start" in scripts else None
+            if script:
+                return {
+                    "runnable": True,
+                    "type": "node",
+                    "reason": None,
+                    "command": ["npm", "run", script],
+                    "cwd": workspace_dir,
+                }
+        except Exception:
+            pass
+        return {
+            "runnable": False,
+            "type": "node",
+            "reason": "package.json found but no 'dev' or 'start' script detected.",
+            "command": None,
+            "cwd": workspace_dir,
+        }
+
+    # Python project
+    has_requirements = "requirements.txt" in files
+    entry_py = next((f for f in ["app.py", "main.py", "server.py"] if f in files), None)
+    if has_requirements and entry_py:
+        return {
+            "runnable": True,
+            "type": "python",
+            "reason": None,
+            "command": [sys.executable, entry_py],
+            "cwd": workspace_dir,
+        }
+    if entry_py:
+        return {
+            "runnable": True,
+            "type": "python",
+            "reason": None,
+            "command": [sys.executable, entry_py],
+            "cwd": workspace_dir,
+        }
+
+    return {
+        "runnable": False,
+        "type": "unknown",
+        "reason": (
+            f"Could not detect project type. Files found: {sorted(files) or 'none'}. "
+            "Expected index.html (static), package.json (node), or app.py/main.py (python)."
+        ),
+        "command": None,
+        "cwd": workspace_dir,
+    }
+
+
+@app.post("/projects/{project_id}/run")
+async def run_project(
+    project_id: str,
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict:
+    """Detect project type and start the app on a free port.
+
+    Returns:
+      { runnable: bool, url: str|null, port: int|null, type: str, reason: str|null }
+
+    Never fakes a running state — if the project can't be detected or launched,
+    runnable=False is returned with a plain-text reason.
+    """
+    state = run_states.get(project_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Run {project_id} not found.")
+    workspace_dir = state.get("workspace_dir")
+    if not workspace_dir or not os.path.isdir(workspace_dir):
+        return {
+            "runnable": False,
+            "type": "unknown",
+            "reason": "No project workspace directory found for this run.",
+            "url": None,
+            "port": None,
+        }
+
+    # Kill any existing process for this project.
+    existing = running_processes.get(project_id)
+    if existing:
+        try:
+            existing["process"].terminate()
+        except Exception:
+            pass
+        del running_processes[project_id]
+
+    detection = _detect_project_type(workspace_dir)
+    if not detection["runnable"]:
+        return {
+            "runnable": False,
+            "type": detection["type"],
+            "reason": detection["reason"],
+            "url": None,
+            "port": None,
+        }
+
+    port = _find_free_port()
+    project_type = detection["type"]
+
+    try:
+        if project_type == "static":
+            # Serve with Python http.server — cross-platform, no npm required.
+            cmd = [sys.executable, "-m", "http.server", str(port)]
+            process = subprocess.Popen(
+                cmd,
+                cwd=workspace_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                # Windows: isolate process group so we can terminate cleanly
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+            )
+        else:
+            # Node or Python project — shell=True required on Windows for npm
+            cmd = detection["command"]
+            use_shell = sys.platform == "win32" and project_type == "node"
+            process = subprocess.Popen(
+                cmd if not use_shell else " ".join(cmd),
+                cwd=workspace_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=use_shell,
+                env={**os.environ, "PORT": str(port)},
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+            )
+
+        # Wait briefly to confirm the process started (doesn't immediately crash).
+        await asyncio.sleep(1.5)
+        if process.poll() is not None:
+            # Process exited already — read stderr for diagnosis.
+            _, err = process.communicate(timeout=2)
+            return {
+                "runnable": False,
+                "type": project_type,
+                "reason": f"Process exited immediately. Stderr: {err.decode(errors='replace')[:400]}",
+                "url": None,
+                "port": None,
+            }
+
+        url = f"http://localhost:{port}"
+        running_processes[project_id] = {
+            "pid": process.pid,
+            "port": port,
+            "url": url,
+            "type": project_type,
+            "process": process,
+        }
+        logger.info("Project %s running at %s (pid=%d)", project_id, url, process.pid)
+        return {
+            "runnable": True,
+            "type": project_type,
+            "reason": None,
+            "url": url,
+            "port": port,
+        }
+
+    except Exception as exc:
+        logger.error("Failed to start project %s: %s", project_id, exc)
+        return {
+            "runnable": False,
+            "type": project_type,
+            "reason": f"Failed to launch: {exc}",
+            "url": None,
+            "port": None,
+        }
+
+
+@app.get("/projects/{project_id}/run-status")
+def get_project_run_status(
+    project_id: str,
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict:
+    """Return the current run state of a launched project process."""
+    info = running_processes.get(project_id)
+    if not info:
+        return {"status": "not_started", "url": None, "port": None}
+    process = info["process"]
+    if process.poll() is None:
+        return {"status": "running", "url": info["url"], "port": info["port"]}
+    return {"status": "stopped", "url": None, "port": None}
+
+
+@app.post("/projects/{project_id}/stop")
+def stop_project(
+    project_id: str,
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict:
+    """Kill a running project process."""
+    info = running_processes.pop(project_id, None)
+    if not info:
+        return {"status": "not_running"}
+    process = info["process"]
+    try:
+        if sys.platform == "win32":
+            process.send_signal(_signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
+        else:
+            process.terminate()
+        process.wait(timeout=5)
+    except Exception:
+        process.kill()
+    logger.info("Project %s stopped (pid=%d)", project_id, info["pid"])
+    return {"status": "stopped", "pid": info["pid"]}
 
 
 # ---------------------------------------------------------------------------
