@@ -1,147 +1,104 @@
-# RAG / Documentation Agent
+# RAG Agent
 
-## Purpose
-
-The RAG (Retrieval-Augmented Generation) agent is responsible for:
-
-1. **Ingesting** source code and documentation from the target application.
-2. **Chunking** and **embedding** the text using a local sentence-transformer model.
-3. **Storing** the resulting vectors in a local ChromaDB collection.
-4. **Answering** natural-language questions by retrieving relevant chunks and
-   generating responses through the local Ollama model.
-
-This agent serves as the knowledge backbone for the entire multi-agent pipeline,
-providing context-aware answers to queries from the Planner and other agents.
+Retrieval-Augmented Generation (RAG) microservice for the multi-agent code pipeline.  
+It ingests source files from `target-app/`, stores their embeddings in a local ChromaDB
+collection, and answers natural-language questions by retrieving relevant chunks and
+forwarding them to a local Ollama LLM.
 
 ---
 
-## Architecture
-
-```
-source files (target-app/)
-        |
-        v
-  [collect_documents] -- walks the directory, filters by extension
-        |
-        v
-  [chunk_documents]   -- splits into overlapping text chunks
-        |
-        v
-  [build_vector_store] -- embeds with sentence-transformers, stores in ChromaDB
-        |
-        v
-  [query]             -- retrieves top-k chunks, sends to Ollama, returns answer
-```
-
----
-
-## Project Structure
-
-```
-rag-agent/
-  config.py          -- Centralized configuration (Ollama URL, model, Chroma path, etc.)
-  ingest.py          -- Document collection, chunking, and vector store creation
-  query.py           -- Retrieval and answer generation via Ollama
-  api.py             -- FastAPI HTTP wrapper for inter-agent communication
-  test_rag.py        -- End-to-end test script with sample question-answer pairs
-  requirements.txt   -- Python dependencies
-  sample_docs/       -- Placeholder source files for testing when target-app is empty
-    app.py           -- Sample FastAPI application (task manager)
-    README.md        -- Sample application documentation
-```
-
----
-
-## Setup
-
-### Prerequisites
-
-- Python 3.10+
-- Ollama running locally (or in Docker) on port 11434
-- A pulled model (e.g., `mistral`)
-
-### Installation
+## Quick start
 
 ```bash
-cd rag-agent
+# 1. Install dependencies
 pip install -r requirements.txt
-```
 
-### Configuration
-
-All settings are controlled via environment variables or defaults in `config.py`:
-
-| Variable            | Default                        | Description                        |
-|---------------------|--------------------------------|------------------------------------|
-| `OLLAMA_BASE_URL`   | `http://localhost:11434`       | Ollama server URL                  |
-| `OLLAMA_MODEL`      | `mistral`                      | Model name for answer generation   |
-| `EMBEDDING_MODEL`   | `all-MiniLM-L6-v2`            | Sentence-transformer model         |
-| `CHROMA_PERSIST_DIR`| `.chroma_store/` (local)       | ChromaDB persistence directory     |
-| `RAG_SOURCE_DIR`    | `../target-app/`               | Directory to ingest documents from |
-| `CHUNK_SIZE`        | `1000`                         | Characters per chunk               |
-| `CHUNK_OVERLAP`     | `200`                          | Overlap between consecutive chunks |
-| `RAG_API_HOST`      | `0.0.0.0`                      | API server bind address            |
-| `RAG_API_PORT`      | `8011`                         | API server port                    |
-
----
-
-## Usage
-
-### 1. Ingest documents
-
-```bash
-# Ingest from the default source directory (target-app/)
+# 2. Ingest the target-app source tree
 python ingest.py
 
-# Or specify a custom directory
-python ingest.py --source-dir ./sample_docs
-```
-
-### 2. Query the knowledge base
-
-```bash
-# Requires Ollama to be running with a model loaded
-python query.py "What API endpoints does the application expose?"
-```
-
-### 3. Run as an HTTP service
-
-```bash
+# 3. Start the API server
 python api.py
-# Server starts at http://localhost:8011
+# → listening on http://0.0.0.0:8011
 ```
-
-API endpoints:
-
-- `GET  /health`  -- Health check
-- `POST /ingest`  -- `{ "source_dir": "/path/to/source" }`
-- `POST /query`   -- `{ "question": "...", "top_k": 5 }`
-
-### 4. Run tests
-
-```bash
-python test_rag.py
-```
-
-The test script validates:
-- Document collection from `sample_docs/`
-- Text chunking correctness
-- Vector store creation and similarity search
-- Retrieval relevance against expected keywords
-- Full Ollama integration (skipped if Ollama is not running)
 
 ---
 
-## Integration with Other Agents
+## Endpoints
 
-The RAG agent communicates via structured JSON over HTTP. Other agents (or the
-n8n workflow) can call `POST /query` with a question and receive a JSON response:
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness probe |
+| `POST` | `/ingest` | Re-ingest documents from `source_dir` |
+| `POST` | `/query` | Answer a natural-language question |
+
+### POST /query — request
 
 ```json
 {
-  "question": "What database does the app use?",
-  "answer": "The application uses a local SQLite database...",
-  "sources": ["README.md", "app.py"],
-  "num_chunks_used": 3
+  "question": "How does the Flask app handle authentication?",
+  "top_k": 5
 }
 ```
+
+The `description` field is accepted as an alias for `question` (Planner-agent compatibility).
+
+### POST /query — response
+
+```json
+{
+  "question": "How does the Flask app handle authentication?",
+  "answer": "...",
+  "sources": ["app.py", "requirements.txt"],
+  "num_chunks_used": 5,
+  "confidence": 0.8123,
+  "low_confidence": false
+}
+```
+
+---
+
+## Confidence scoring
+
+### `confidence` (float, 0–1)
+
+The maximum similarity score across all retrieved document chunks for the query.  
+It is derived from ChromaDB's `similarity_search_with_relevance_scores`, which already
+returns scores in the 0–1 range (higher = more relevant).
+
+- **1.0** — a retrieved chunk is an exact or near-exact match.
+- **0.5** — moderate relevance; the answer may still be useful but should be reviewed.
+- **0.0** — no relevant chunks were found; the answer is entirely speculative.
+
+### `low_confidence` (bool)
+
+Set to `true` when `confidence < 0.5`.
+
+Answers with `low_confidence: true` are still returned because the LLM may still
+produce a useful response from loosely related context.  However, **callers must not
+treat low-confidence answers as authoritative facts**.  Downstream agents should either:
+
+- Surface the uncertainty to the end user, or
+- Discard the answer and request a human review.
+
+---
+
+## Configuration
+
+All settings can be overridden via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server |
+| `OLLAMA_MODEL` | `qwen2.5:7b-instruct-q4_K_M` | LLM model tag |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | HuggingFace embedding model |
+| `CHROMA_PERSIST_DIR` | `.chroma_store/` | ChromaDB persistence path |
+| `CHROMA_COLLECTION` | `codebase_docs` | Collection name |
+| `RAG_SOURCE_DIR` | `../target-app/` | Source directory to ingest |
+| `CHUNK_SIZE` | `1000` | Token chunk size |
+| `CHUNK_OVERLAP` | `200` | Chunk overlap |
+| `RAG_API_HOST` | `0.0.0.0` | API bind host |
+| `RAG_API_PORT` | `8011` | API bind port |
+
+## Supported file extensions
+
+`.py` `.js` `.ts` `.jsx` `.tsx` `.md` `.txt` `.rst` `.json` `.yaml` `.yml` `.html` `.css` `.sql`

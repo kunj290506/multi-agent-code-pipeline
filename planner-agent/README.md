@@ -113,7 +113,7 @@ pip install -r requirements.txt
 | Variable              | Default                   | Description                    |
 |-----------------------|---------------------------|--------------------------------|
 | `OLLAMA_BASE_URL`     | `http://localhost:11434`  | Ollama server URL              |
-| `OLLAMA_MODEL`        | `mistral`                 | Model for task decomposition   |
+| `OLLAMA_MODEL`        | `qwen2.5:7b-instruct-q4_K_M` | Model for task decomposition   |
 | `PLANNER_TEMPERATURE` | `0.1`                     | Sampling temperature           |
 | `PLANNER_MAX_TOKENS`  | `2048`                    | Maximum tokens in response     |
 | `PLANNER_API_HOST`    | `0.0.0.0`                | API server bind address        |

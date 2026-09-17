@@ -12,6 +12,7 @@ independent of the query-generation layer:
 
 import signal
 import sqlite3
+import tempfile
 import threading
 import time
 from typing import Any
@@ -81,6 +82,16 @@ def execute_query(
     own_sandbox = sandbox is None
     if own_sandbox:
         sandbox = SandboxDatabase(read_only=enforce_read_only)
+
+    # Safety: DB Agent must only execute against a sandboxed temporary database.
+    # Reject any path that is not a temp file or in-memory SQLite.
+    _db_path_str = str(sandbox.db_path)
+    if _db_path_str != ":memory:" and not _db_path_str.startswith(tempfile.gettempdir()):
+        raise ValueError(
+            f"DB Agent safety violation: execution rejected. "
+            f"Database path '{_db_path_str}' is not a sandboxed temporary path. "
+            f"Only tempfile paths or ':memory:' are permitted."
+        )
 
     result = {
         "success": False,

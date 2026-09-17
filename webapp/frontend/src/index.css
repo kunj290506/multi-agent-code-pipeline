@@ -1,55 +1,73 @@
+/* ===== DESIGN TOKENS — BMW M SYSTEM ===== */
 :root {
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --bg-gradient-start: #f1f5f9;
-  --bg-gradient-end: #ffffff;
-  --panel-bg: rgba(255, 255, 255, 0.6);
-  --panel-border: rgba(255, 255, 255, 0.8);
-  --accent: #0ea5e9;
-  --accent-hover: #0284c7;
-  --accent-bg: rgba(14, 165, 233, 0.1);
-  --success: #10b981;
-  --error: #ef4444;
-  
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+  /* Canvas & surfaces */
+  --canvas: #000000;
+  --surface-card: #1a1a1a;
+  --surface-soft: #0d0d0d;
+  --surface-elevated: #262626;
+  --hairline: #3c3c3c;
 
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Text */
+  --text-primary: #ffffff;
+  --text-body: #bbbbbb;
+  --text-muted: #7e7e7e;
+
+  /* Accent stripe (4px dividers and active indicators only) */
+  --accent-blue-light: #0066b1;
+  --accent-blue-dark: #1c69d4;
+  --accent-red: #e22718;
+
+  /* Typography */
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Fira Code', ui-monospace, Consolas, monospace;
 
-  font-family: var(--font-sans);
-  color: var(--text-primary);
-  background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
-  background-attachment: fixed;
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-10: 40px;
+  --sp-16: 64px;
+  --sp-24: 96px;
+
+  font-family: var(--font);
+  background: var(--canvas);
+  color: var(--text-body);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
   margin: 0;
   padding: 0;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
+  background: var(--canvas);
 }
 
 #root {
   width: 100vw;
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-h1, h2, h3 {
-  font-family: var(--font-sans);
-  font-weight: 500;
-  color: var(--text-primary);
+h1, h2, h3, h4 {
   margin: 0;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.5px;
+  color: var(--text-primary);
 }
 
-code, pre {
-  font-family: var(--font-mono);
-}
+p { margin: 0; }
 
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--hairline); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

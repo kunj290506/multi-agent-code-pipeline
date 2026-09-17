@@ -56,6 +56,102 @@ services:
 
 
 
+  # ── Agent Services (commented out — Ollama runs on the host, not in a container,
+  #    because GPU passthrough to a containerised Ollama requires WSL2 + CUDA-on-WSL.
+  #    On a 4 GB GPU that is a hardware risk. Uncomment these blocks on capable hardware.)
+  # ─────────────────────────────────────────────────────────────────────────────────────
+
+  # planner-agent:
+  #   build:
+  #     context: ./planner-agent
+  #   container_name: planner-agent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8010:8010"
+  #   environment:
+  #     - OLLAMA_BASE_URL=http://host.docker.internal:11434
+  #     - AGENT_PORT=8010
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - pipeline-net
+
+  # rag-agent:
+  #   build:
+  #     context: ./rag-agent
+  #   container_name: rag-agent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8011:8011"
+  #   environment:
+  #     - OLLAMA_BASE_URL=http://host.docker.internal:11434
+  #     - AGENT_PORT=8011
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - pipeline-net
+
+  # codegen-agent:
+  #   build:
+  #     context: ./codegen-agent
+  #   container_name: codegen-agent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8014:8014"
+  #   environment:
+  #     - OLLAMA_BASE_URL=http://host.docker.internal:11434
+  #     - AGENT_PORT=8014
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - pipeline-net
+
+  # reviewer-agent:
+  #   build:
+  #     context: ./reviewer-agent
+  #   container_name: reviewer-agent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8015:8015"
+  #   environment:
+  #     - OLLAMA_BASE_URL=http://host.docker.internal:11434
+  #     - AGENT_PORT=8015
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - pipeline-net
+
+  # db-agent:
+  #   build:
+  #     context: ./db-agent
+  #   container_name: db-agent
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8012:8012"
+  #   environment:
+  #     - OLLAMA_BASE_URL=http://host.docker.internal:11434
+  #     - AGENT_PORT=8012
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - pipeline-net
+
+  # webapp-backend:
+  #   build:
+  #     context: ./webapp/backend
+  #   container_name: webapp-backend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8020:8020"
+  #   environment:
+  #     - OLLAMA_BASE_URL=http://host.docker.internal:11434
+  #     - AGENT_PORT=8020
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   networks:
+  #     - pipeline-net
+
+
 # ─────────────────────────────────────────────
 #  Named Volumes
 # ─────────────────────────────────────────────

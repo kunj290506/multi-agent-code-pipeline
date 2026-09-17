@@ -104,11 +104,11 @@ pip install -r requirements.txt
 | Variable              | Default                   | Description                     |
 |-----------------------|---------------------------|---------------------------------|
 | `OLLAMA_BASE_URL`     | `http://localhost:11434`  | Ollama server URL               |
-| `OLLAMA_MODEL`        | `mistral`                 | Model for query generation      |
+| `OLLAMA_MODEL`        | `qwen2.5:7b-instruct-q4_K_M` | Model for query generation      |
 | `DB_AGENT_TEMPERATURE`| `0.1`                     | Sampling temperature            |
 | `DB_AGENT_MAX_TOKENS` | `1024`                    | Maximum tokens in response      |
 | `DB_AGENT_HOST`       | `0.0.0.0`                | API server bind address         |
-| `DB_AGENT_PORT`       | `8002`                    | API server port                 |
+| `DB_AGENT_PORT`       | `8012`                    | API server port                 |
 
 ---
 
@@ -128,7 +128,7 @@ python query_generator.py --offline "List all users in the system"
 
 ```bash
 python api.py
-# Server starts at http://localhost:8002
+# Server starts at http://localhost:8012
 ```
 
 Endpoints:
@@ -155,27 +155,48 @@ Tests validate:
 
 ## Database Schema
 
-The default placeholder schema used for query generation:
+The schema mirrors `target-app/app.py` `SCHEMA_SQL` exactly. Update both locations if the target-app schema changes.
+
+| Table      | Columns                                                                                      |
+|------------|----------------------------------------------------------------------------------------------|
+| `users`    | id, username, email, role, created_at                                                        |
+| `projects` | id, name, description, owner_id, status, created_at                                         |
+| `tasks`    | id, title, description, status, assigned_to, priority, created_at, updated_at, project_id   |
+| `comments` | id, task_id, user_id, content, created_at                                                    |
 
 ```sql
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
-    role TEXT DEFAULT 'member',
+    role TEXT DEFAULT 'member' CHECK(role IN ('admin', 'member', 'viewer')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT DEFAULT '',
+    owner_id INTEGER,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
-    status TEXT DEFAULT 'pending',
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
     assigned_to INTEGER,
-    priority TEXT DEFAULT 'medium',
+    priority TEXT DEFAULT 'medium'
+        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (assigned_to) REFERENCES users(id)
+    project_id INTEGER,
+    FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
 );
 
 CREATE TABLE comments (
@@ -184,12 +205,11 @@ CREATE TABLE comments (
     user_id INTEGER NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (task_id) REFERENCES tasks(id),
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 ```
 
-```
 
 ---
 
@@ -216,11 +236,11 @@ query-generation module and enforces its own protections.
 db-agent/
   sandbox.py          -- Sandbox database lifecycle management
   executor.py         -- Core query execution engine
-  executor_api.py     -- FastAPI HTTP wrapper (port 8003)
+  executor_api.py     -- FastAPI HTTP wrapper (port 8013)
   test_executor.py    -- Execution layer tests
 ```
 
-### Execution API (Port 8003)
+### Execution API (Port 8013)
 
 | Method | Endpoint   | Description                              |
 |--------|------------|------------------------------------------|
@@ -268,7 +288,7 @@ Response:
 
 ```bash
 python executor_api.py
-# Server starts at http://localhost:8003
+# Server starts at http://localhost:8013
 ```
 
 ### Running Execution Tests
@@ -280,9 +300,9 @@ python test_executor.py
 ### Integration with Query-Generation Module
 
 The typical workflow:
-1. Call the query-generation API (`POST /generate` on port 8002).
+1. Call the query-generation API (`POST /generate` on port 8012).
 2. Receive the parameterized query and parameters.
-3. Pass them to the execution API (`POST /execute` on port 8003).
+3. Pass them to the execution API (`POST /execute` on port 8013).
 4. Receive formatted results.
 
 The query-generation module guarantees that all returned queries have passed
@@ -294,5 +314,5 @@ safety validation. The execution layer enforces additional runtime protections
 | Variable              | Default    | Description                      |
 |-----------------------|------------|----------------------------------|
 | `DB_EXECUTOR_HOST`    | `0.0.0.0` | Execution API bind address       |
-| `DB_EXECUTOR_PORT`    | `8003`     | Execution API port               |
+| `DB_EXECUTOR_PORT`    | `8013`     | Execution API port               |
 
