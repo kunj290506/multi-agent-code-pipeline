@@ -1570,3 +1570,50 @@
   border-color: var(--accent-blue-dark);
   color: var(--text-body);
 }
+/* Pre-flight Checks */
+.preflight-alert {
+  margin-top: 8px;
+  padding: 8px;
+  border-left: 2px solid;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.preflight-warning {
+  border-color: #d4a71c;
+  background: rgba(212, 167, 28, 0.1);
+  color: #e2c050;
+}
+.preflight-blocked {
+  border-color: var(--accent-red);
+  background: rgba(226, 39, 24, 0.1);
+  color: #ff5b5b;
+}
+.preflight-alert-text {
+  margin-bottom: 4px;
+}
+.preflight-resolution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.preflight-resolution select {
+  background: var(--surface-card);
+  color: var(--text-heading);
+  border: 1px solid var(--border-hairline);
+  padding: 2px 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.preflight-preview {
+  margin-top: 8px;
+  cursor: pointer;
+}
+.preflight-preview pre {
+  background: var(--surface-card);
+  padding: 8px;
+  border: 1px solid var(--border-hairline);
+  max-height: 150px;
+  overflow: auto;
+  margin-top: 4px;
+}

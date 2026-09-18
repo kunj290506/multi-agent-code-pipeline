@@ -12,7 +12,10 @@ import { getFileContent, saveFile } from '../api'
 import { computeUnifiedDiff, type DiffLine } from '../utils/diff'
 
 interface CodeEditorProps {
-  selectedPath: string | null
+  activeFile: string | null
+  openFiles: string[]
+  onSelectTab: (path: string) => void
+  onCloseTab: (path: string) => void
   /** file_written events from the pipeline (pushed via WebSocket/SSE) */
   diffData?: { filename: string; previous_content: string | null; new_content: string } | null
 }
@@ -66,7 +69,7 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
 // ---------------------------------------------------------------------------
 // Code Editor
 // ---------------------------------------------------------------------------
-export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) {
+export default function CodeEditor({ activeFile, openFiles, onSelectTab, onCloseTab, diffData }: CodeEditorProps) {
   const [content, setContent] = useState<string | null>(null)
   const [editedContent, setEditedContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -80,7 +83,7 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
 
   // Load file content
   useEffect(() => {
-    if (!selectedPath) {
+    if (!activeFile) {
       setContent(null)
       setEditedContent(null)
       setError(null)
@@ -93,7 +96,7 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
     setEditedContent(null)
     setError(null)
     setSaveMsg(null)
-    getFileContent(selectedPath)
+    getFileContent(activeFile)
       .then(text => {
         if (!cancelled) {
           setContent(text)
@@ -108,13 +111,13 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
         }
       })
     return () => { cancelled = true }
-  }, [selectedPath])
+  }, [activeFile])
 
   // When diffData arrives for the selected file, compute diff and switch to diff mode
   useEffect(() => {
-    if (!diffData || !selectedPath) return
-    // Match by filename (the last segment of selectedPath)
-    const selectedFilename = selectedPath.split(/[\\/]/).pop()
+    if (!diffData || !activeFile) return
+    // Match by filename (the last segment of activeFile)
+    const selectedFilename = activeFile.split(/[\\/]/).pop()
     if (selectedFilename === diffData.filename) {
       const lines = computeUnifiedDiff(diffData.previous_content, diffData.new_content, diffData.filename)
       setDiffLines(lines)
@@ -123,14 +126,14 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
       setContent(diffData.new_content)
       setEditedContent(diffData.new_content)
     }
-  }, [diffData, selectedPath])
+  }, [diffData, activeFile])
 
   const handleSave = useCallback(async () => {
-    if (!selectedPath || editedContent === null || saving) return
+    if (!activeFile || editedContent === null || saving) return
     setSaving(true)
     setSaveMsg(null)
     try {
-      await saveFile(selectedPath, editedContent)
+      await saveFile(activeFile, editedContent)
       setContent(editedContent)
       setSaveMsg('Saved')
       setTimeout(() => setSaveMsg(null), 2000)
@@ -139,9 +142,9 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
     } finally {
       setSaving(false)
     }
-  }, [selectedPath, editedContent, saving])
+  }, [activeFile, editedContent, saving])
 
-  if (!selectedPath) {
+  if (!activeFile) {
     return (
       <div className="editor-placeholder" style={{ height: '100%' }}>
         Select a file to view its contents
@@ -149,8 +152,8 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
     )
   }
 
-  const filename = selectedPath.split(/[\\/]/).pop() ?? selectedPath
-  const { lang, label } = detectLanguage(selectedPath)
+  const filename = activeFile.split(/[\\/]/).pop() ?? activeFile
+  const { lang, label } = detectLanguage(activeFile)
 
   const highlighted =
     content != null && lang !== 'none'
@@ -161,6 +164,28 @@ export default function CodeEditor({ selectedPath, diffData }: CodeEditorProps) 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      <div className="editor-file-tabs" style={{ display: 'flex', background: 'var(--bg-pane)', borderBottom: '1px solid var(--hairline)', overflowX: 'auto' }}>
+        {openFiles.map(path => {
+          const name = path.split(/[\\/]/).pop() ?? path
+          const isActive = path === activeFile
+          return (
+            <div 
+              key={path} 
+              style={{ padding: '8px 12px', borderRight: '1px solid var(--hairline)', background: isActive ? 'var(--bg-panel)' : 'transparent', borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.85rem' }}
+              onClick={() => onSelectTab(path)}
+            >
+              <span style={{ marginRight: 8, color: isActive ? 'var(--fg-default)' : 'var(--fg-muted)' }}>{name}</span>
+              <span 
+                style={{ color: 'var(--fg-muted)', fontSize: '1rem', lineHeight: 1 }}
+                onClick={(e) => { e.stopPropagation(); onCloseTab(path) }}
+                title="Close"
+              >
+                &times;
+              </span>
+            </div>
+          )
+        })}
+      </div>
       <div className="editor-header">
         <span className="editor-filename">
           {filename}

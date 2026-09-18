@@ -28,31 +28,31 @@ services:
       - ./n8n:/home/node/.n8n/workflows   # persist exported workflow JSONs
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux compatibility
-    # depends_on:
-    #   ollama:
-    #     condition: service_healthy
+    depends_on:
+      ollama:
+        condition: service_healthy
     networks:
       - pipeline-net
 
   # ── Ollama: Local LLM inference (Disabled - running on host) ─────────────
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: ollama
-  #   restart: unless-stopped
-  #   ports:
-  #     - "11434:11434"
-  #   environment:
-  #     - OLLAMA_HOST=0.0.0.0
-  #   volumes:
-  #     - ollama_data:/root/.ollama          # persist downloaded models
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
-  #     interval: 15s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 10s
-  #   networks:
-  #     - pipeline-net
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama          # persist downloaded models
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - pipeline-net
 
 
 
@@ -157,6 +157,7 @@ services:
 # ─────────────────────────────────────────────
 volumes:
   n8n_data:
+  ollama_data:
 
 # ─────────────────────────────────────────────
 #  Networks

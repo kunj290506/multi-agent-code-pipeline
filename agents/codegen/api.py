@@ -31,13 +31,42 @@ app = FastAPI(
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
-def _infer_spec_from_description(description: str, context: str = "") -> dict:
+def _infer_spec_from_description(
+    description: str,
+    context: str = "",
+    target_filename: str | None = None,
+) -> dict:
     """Infer artifact_type, language, and framework from a plain description string.
 
     Used when the Planner routes a codegen subtask without a full ArtifactSpec.
     Falls back to 'unknown'/python/fastapi for unrecognised patterns.
     """
     desc_lower = description.lower()
+    filename_lower = (target_filename or "").lower()
+    filename_types = {
+        ".py": ("source_module", "python", "none"),
+        ".ts": ("source_module", "typescript", "none"),
+        ".tsx": ("source_module", "typescript", "react"),
+        ".jsx": ("react_component", "javascript", "react"),
+        ".js": ("script", "javascript", "none"),
+        ".mjs": ("script", "javascript", "none"),
+        ".json": ("configuration", "json", "none"),
+        ".yaml": ("configuration", "yaml", "none"),
+        ".yml": ("configuration", "yaml", "none"),
+        ".sql": ("database_migration", "sql", "none"),
+        ".md": ("documentation", "markdown", "none"),
+    }
+    for extension, (artifact_type, language, framework) in filename_types.items():
+        if filename_lower.endswith(extension):
+            return {
+                "artifact_type": artifact_type,
+                "name": target_filename.rsplit(".", 1)[0],
+                "description": description,
+                "language": language,
+                "framework": framework,
+                "context": context,
+                "target_filename": target_filename,
+            }
 
     if ".html" in desc_lower or ("html" in desc_lower and "index" in desc_lower):
         return {
@@ -106,6 +135,10 @@ class GenerateRequest(BaseModel):
     context: str | None = Field(
         default=None, description="Optional context."
     )
+    target_filename: str | None = Field(
+        default=None,
+        description="Exact output filename selected by Planner.",
+    )
     prior_issues: list[dict] | None = Field(
         default=None,
         description=(
@@ -127,6 +160,7 @@ class GenerateRequest(BaseModel):
             data["spec"] = _infer_spec_from_description(
                 data["description"],
                 context=data.get("context", ""),
+                target_filename=data.get("target_filename"),
             )
         if not data.get("spec"):
             raise ValueError("Either 'spec' or 'description' must be provided.")

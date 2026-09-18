@@ -8,7 +8,6 @@ Handles database lifecycle, schema initialization, and seed data loading.
 import os
 import sqlite3
 import tempfile
-from pathlib import Path
 
 
 # Schema mirrors target-app/app.py SCHEMA_SQL. Update both if the target-app schema changes.

@@ -57,7 +57,7 @@ def _build_prompt(spec: ArtifactSpec) -> str:
     if spec.dependencies:
         spec_block += f"Dependencies: {', '.join(spec.dependencies)}\n"
     if spec.constraints:
-        spec_block += f"Constraints:\n"
+        spec_block += "Constraints:\n"
         for c in spec.constraints:
             spec_block += f"  - {c}\n"
     if spec.context:
@@ -138,9 +138,11 @@ def generate_artifact(spec: ArtifactSpec, max_retries: int = 2) -> GeneratedArti
             "model": config.OLLAMA_MODEL,
             "prompt": prompt_with_correction,
             "stream": False,
+            "keep_alive": config.OLLAMA_KEEP_ALIVE,
             "options": {
                 "temperature": config.TEMPERATURE,
                 "num_predict": config.MAX_TOKENS,
+                "num_ctx": config.OLLAMA_CONTEXT_SIZE,
             },
         }
 
@@ -311,26 +313,8 @@ _OFFLINE_TEMPLATES = {
           <!-- {description} -->
           <div id="app">
             <h1>{name}</h1>
-            <div id="display" class="display">0</div>
-            <div id="buttons" class="buttons">
-              <button class="btn btn-clear" onclick="clearDisplay()">C</button>
-              <button class="btn" onclick="appendToDisplay('/')">÷</button>
-              <button class="btn" onclick="appendToDisplay('*')">×</button>
-              <button class="btn" onclick="appendToDisplay('-')">−</button>
-              <button class="btn" onclick="appendToDisplay('7')">7</button>
-              <button class="btn" onclick="appendToDisplay('8')">8</button>
-              <button class="btn" onclick="appendToDisplay('9')">9</button>
-              <button class="btn" onclick="appendToDisplay('+')">+</button>
-              <button class="btn" onclick="appendToDisplay('4')">4</button>
-              <button class="btn" onclick="appendToDisplay('5')">5</button>
-              <button class="btn" onclick="appendToDisplay('6')">6</button>
-              <button class="btn btn-equals" onclick="calculate()">=</button>
-              <button class="btn" onclick="appendToDisplay('1')">1</button>
-              <button class="btn" onclick="appendToDisplay('2')">2</button>
-              <button class="btn" onclick="appendToDisplay('3')">3</button>
-              <button class="btn btn-wide" onclick="appendToDisplay('0')">0</button>
-              <button class="btn" onclick="appendToDisplay('.')">.</button>
-            </div>
+                        <p id="description">{description}</p>
+                        <main id="content" class="content"></main>
           </div>
           <script src="script.js"></script>
         </body>
@@ -415,81 +399,16 @@ _OFFLINE_TEMPLATES = {
 
     ("script", "javascript", "none"): textwrap.dedent('''\
         // {description}
-        // Generated in offline mode — implements calculator logic.
+                // Generated in offline mode. The online LLM path should be used for
+                // request-specific application behavior.
 
         (function () {{
           'use strict';
 
-          let expression = '';
-          let justCalculated = false;
-
-          function updateDisplay(value) {{
-            const display = document.getElementById('display');
-            if (display) display.textContent = value || '0';
-          }}
-
-          window.appendToDisplay = function (value) {{
-            // After a result, start a fresh expression unless appending an operator.
-            if (justCalculated) {{
-              if (['+', '-', '*', '/'].includes(value)) {{
-                justCalculated = false;
-              }} else {{
-                expression = '';
-                justCalculated = false;
-              }}
-            }}
-            // Prevent double operators.
-            const lastChar = expression.slice(-1);
-            if (['+', '-', '*', '/'].includes(lastChar) && ['+', '-', '*', '/'].includes(value)) {{
-              expression = expression.slice(0, -1);
-            }}
-            expression += value;
-            updateDisplay(expression);
-          }};
-
-          window.clearDisplay = function () {{
-            expression = '';
-            justCalculated = false;
-            updateDisplay('0');
-          }};
-
-          window.calculate = function () {{
-            if (!expression) return;
-            try {{
-              // Use Function constructor to safely evaluate arithmetic only.
-              const sanitised = expression.replace(/[^0-9+\-*/().]/g, '');
-              // eslint-disable-next-line no-new-func
-              const result = Function('"use strict"; return (' + sanitised + ')')();
-              if (!isFinite(result)) {{
-                updateDisplay('Error');
-                expression = '';
-              }} else {{
-                const formatted = parseFloat(result.toFixed(10)).toString();
-                updateDisplay(formatted);
-                expression = formatted;
-                justCalculated = true;
-              }}
-            }} catch (err) {{
-              updateDisplay('Error');
-              expression = '';
-            }}
-          }};
-
-          // Keyboard support.
-          document.addEventListener('keydown', function (e) {{
-            if (e.key >= '0' && e.key <= '9') window.appendToDisplay(e.key);
-            else if (e.key === '+') window.appendToDisplay('+');
-            else if (e.key === '-') window.appendToDisplay('-');
-            else if (e.key === '*') window.appendToDisplay('*');
-            else if (e.key === '/') {{ e.preventDefault(); window.appendToDisplay('/'); }}
-            else if (e.key === '.') window.appendToDisplay('.');
-            else if (e.key === 'Enter' || e.key === '=') window.calculate();
-            else if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') window.clearDisplay();
-            else if (e.key === 'Backspace') {{
-              expression = expression.slice(0, -1);
-              updateDisplay(expression || '0');
-            }}
-          }});
+                    const content = document.getElementById('content');
+                    if (content) {{
+                        content.textContent = 'Request-specific behavior is generated by the online model.';
+                    }}
         }})();
     '''),
 
@@ -535,6 +454,9 @@ def _suggest_filename(spec: ArtifactSpec) -> str:
     the generated file always lands at the right path (index.html, style.css, …)
     regardless of the spec's `name` field.
     """
+    if spec.target_filename:
+        return spec.target_filename
+
     # Web / document types: canonical filenames
     canonical = {
         "html_page": "index.html",

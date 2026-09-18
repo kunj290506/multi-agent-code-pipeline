@@ -257,7 +257,8 @@ def test_ollama_integration() -> bool:
     _separator("Test: Ollama Integration (requires running server)")
     try:
         import requests
-        requests.get(f"{config.OLLAMA_BASE_URL}/api/tags", timeout=3)
+        response = requests.get(f"{config.OLLAMA_BASE_URL}/api/tags", timeout=3)
+        response.raise_for_status()
     except Exception:
         print("  [SKIP] Ollama server is not reachable.")
         return True
@@ -276,6 +277,9 @@ def test_ollama_integration() -> bool:
             print(f"  Type: {result['query_type']}")
             print(f"  Safe: {result['safety_check']['passed']}")
             print("  [PASS]")
+        except requests.RequestException as exc:
+            print(f"  [SKIP] Ollama generation endpoint is unavailable: {exc}")
+            return True
         except ValueError as exc:
             print(f"  Request: {nl_request}")
             print(f"  [FAIL] {exc}")

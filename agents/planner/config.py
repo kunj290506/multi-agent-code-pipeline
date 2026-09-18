@@ -10,7 +10,7 @@ import os
 # Ollama LLM settings
 # ---------------------------------------------------------------------------
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct-q4_K_M")
 
 # ---------------------------------------------------------------------------
 # Subtask schema: valid agent names
@@ -27,7 +27,9 @@ VALID_AGENTS: list[str] = [
 # LLM generation parameters
 # ---------------------------------------------------------------------------
 TEMPERATURE: float = float(os.getenv("PLANNER_TEMPERATURE", "0.1"))
-MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "2048"))
+MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "1024"))
+OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+OLLAMA_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "2048"))
 
 # ---------------------------------------------------------------------------
 # API server

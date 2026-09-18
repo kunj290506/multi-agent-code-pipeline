@@ -67,6 +67,10 @@ class ArtifactSpec(BaseModel):
             "or related code snippets."
         ),
     )
+    target_filename: str | None = Field(
+        default=None,
+        description="Exact output filename selected by the Planner, including extension.",
+    )
 
 
 # ---------------------------------------------------------------------------

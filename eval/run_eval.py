@@ -151,7 +151,7 @@ def run_case(case: dict, base_url: str, timeout: int) -> dict:
             timeout=30,
         )
         post_resp.raise_for_status()
-        post_data = post_resp.json()
+        post_resp.json()
     except requests.RequestException as exc:
         print(f"  [{case_id}] POST failed: {exc} ✗")
         return result

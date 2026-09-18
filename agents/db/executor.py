@@ -10,10 +10,8 @@ independent of the query-generation layer:
 - Row-count limits
 """
 
-import signal
 import sqlite3
 import tempfile
-import threading
 import time
 from typing import Any
 

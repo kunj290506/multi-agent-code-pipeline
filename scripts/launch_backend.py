@@ -48,6 +48,7 @@ COLORS = {
 RESET = "\033[0m"
 
 procs: list[subprocess.Popen] = []
+RELOAD_ARGS = ["--reload"] if os.getenv("PIPELINE_RELOAD") == "1" else []
 
 
 def _tag(label: str) -> str:
@@ -66,9 +67,8 @@ def start_all() -> None:
             module,
             "--host", "0.0.0.0",
             "--port", str(port),
-            "--reload",
             "--log-level", "warning",   # suppress per-request noise
-        ]
+        ] + RELOAD_ARGS
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,

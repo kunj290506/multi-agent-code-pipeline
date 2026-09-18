@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 
 :: ============================================================
-::  Multi-Agent Pipeline — Start All Services (2 windows only)
-::  Window 1: all Python backend agents via launch_backend.py
-::  Window 2: Vite frontend (npm run dev)
+::  Multi-Agent Pipeline — One-command demo launcher
+::  Starts all backend agents and the Vite frontend, waits for
+::  every health endpoint, then opens the UI.
 :: ============================================================
 
 set "ROOT=%~dp0.."
@@ -34,27 +34,19 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
-:: ── Install Python deps (fast / silent on repeat runs) ─────
-echo.
-echo [1/3] Installing Python dependencies...
-python -m pip install ^
-    -r "%ROOT%\agents\planner\requirements.txt" ^
-    -r "%ROOT%\agents\rag\requirements.txt" ^
-    -r "%ROOT%\agents\codegen\requirements.txt" ^
-    -r "%ROOT%\agents\reviewer\requirements.txt" ^
-    -r "%ROOT%\agents\db\requirements.txt" ^
-    -r "%ROOT%\webapp\backend\requirements.txt" ^
-    -r "%ROOT%\target-app\requirements.txt" ^
-    -q >nul 2>&1
+:: ── Verify dependencies already installed ──────────────────
+if not exist "%ROOT%\webapp\frontend\node_modules" (
+    echo ERROR: Frontend dependencies are missing.
+    echo Run: cd /d "%ROOT%\webapp\frontend" ^&^& npm install
+    pause & exit /b 1
+)
 
-:: ── Install frontend deps ───────────────────────────────────
-echo [2/3] Installing frontend dependencies...
-cd /d "%ROOT%\webapp\frontend"
-call npm install --silent >nul 2>&1
-cd /d "%ROOT%"
+:: ── Clear stale listeners so old workers cannot conflict ────
+echo [1/3] Clearing stale project listeners...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ports=8000,8010,8011,8012,8013,8014,8015,8020,5173; foreach($port in $ports){ Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }"
 
-:: ── Launch 2 windows ───────────────────────────────────────
-echo [3/3] Launching 2 terminal windows...
+:: ── Launch backend and frontend windows ────────────────────
+echo [2/3] Launching backend and frontend...
 
 :: Window 1 — all backend services in one Python process
 start "Backend Services" cmd /k "cd /d "%ROOT%" && python scripts/launch_backend.py"
@@ -62,12 +54,19 @@ timeout /t 6 /nobreak >nul
 
 :: Window 2 — Vite frontend
 start "Frontend :5173" cmd /k "cd /d "%ROOT%\webapp\frontend" && npm run dev"
-timeout /t 4 /nobreak >nul
+
+:: ── Wait for every health endpoint ──────────────────────────
+echo [3/3] Waiting for all services (RAG may take a minute)...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$urls='http://localhost:5173/','http://localhost:8000/health','http://localhost:8010/health','http://localhost:8011/health','http://localhost:8012/health','http://localhost:8013/health','http://localhost:8014/health','http://localhost:8015/health','http://localhost:8020/health'; $deadline=(Get-Date).AddMinutes(5); do { $ok=$true; foreach($url in $urls){ try { Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3 | Out-Null } catch { $ok=$false; break } }; if($ok){ exit 0 }; Start-Sleep -Seconds 3 } while((Get-Date) -lt $deadline); Write-Host 'ERROR: One or more services did not become healthy.'; exit 1"
+if errorlevel 1 (
+    echo Startup failed. Check the Backend Services and Frontend :5173 windows.
+    pause & exit /b 1
+)
 
 :: ── Print links ─────────────────────────────────────────────
 echo.
 echo ============================================================
-echo  ALL SERVICES STARTED (2 windows)
+echo  ALL SERVICES HEALTHY
 echo ============================================================
 echo.
 echo   MAIN UI         http://localhost:5173          ^<-- open this

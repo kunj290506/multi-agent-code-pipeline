@@ -4,6 +4,10 @@ export interface Subtask {
   description: string
   dependencies: string[]
   target_filename?: string
+  preflight_status?: 'ok' | 'warning' | 'blocked'
+  preflight_details?: string
+  preflight_old_content?: string
+  resolution_strategy?: 'overwrite' | 'rename' | 'skip'
 }
 
 export interface Plan {

@@ -5,6 +5,7 @@ import type { FileNode } from '../types'
 interface FileExplorerProps {
   selectedPath: string | null
   onSelect: (path: string) => void
+  onDoubleClick?: (path: string) => void
   refreshTrigger: number
   /** When set, the explorer shows the workspace for this run ID instead of the default target-app/. */
   projectId?: string
@@ -15,11 +16,13 @@ function TreeNode({
   depth,
   selectedPath,
   onSelect,
+  onDoubleClick,
 }: {
   node: FileNode
   depth: number
   selectedPath: string | null
   onSelect: (path: string) => void
+  onDoubleClick?: (path: string) => void
 }) {
   const [expanded, setExpanded] = useState(true)
   const paddingLeft = 12 + depth * 12
@@ -42,6 +45,7 @@ function TreeNode({
             depth={depth + 1}
             selectedPath={selectedPath}
             onSelect={onSelect}
+            onDoubleClick={onDoubleClick}
           />
         ))}
       </div>
@@ -54,13 +58,14 @@ function TreeNode({
       className={`explorer-row${isSelected ? ' selected' : ''}`}
       style={{ paddingLeft }}
       onClick={() => onSelect(node.path)}
+      onDoubleClick={() => onDoubleClick && onDoubleClick(node.path)}
     >
       <span className="explorer-row-name">{node.name}</span>
     </div>
   )
 }
 
-export default function FileExplorer({ selectedPath, onSelect, refreshTrigger, projectId }: FileExplorerProps) {
+export default function FileExplorer({ selectedPath, onSelect, onDoubleClick, refreshTrigger, projectId }: FileExplorerProps) {
   const [root, setRoot] = useState<FileNode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +109,7 @@ export default function FileExplorer({ selectedPath, onSelect, refreshTrigger, p
                   depth={0}
                   selectedPath={selectedPath}
                   onSelect={onSelect}
+                  onDoubleClick={onDoubleClick}
                 />
               ))
             : <div className="explorer-empty">No files generated yet.</div>

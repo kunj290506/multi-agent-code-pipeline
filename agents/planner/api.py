@@ -32,6 +32,15 @@ class PlanRequest(BaseModel):
     feature_request: str = Field(
         ..., description="Plain-language feature request to decompose."
     )
+    file_manifest: list | dict | str | None = Field(
+        default=None, description="List of existing files in the project workspace."
+    )
+    structural_map: dict | str | None = Field(
+        default=None, description="Structural extraction (symbols, tables) of the codebase."
+    )
+    rag_context: str | None = Field(
+        default=None, description="Relevant context retrieved from the RAG agent."
+    )
     offline: bool = Field(
         default=False,
         description="If true, use offline mode (no Ollama required).",
@@ -75,9 +84,19 @@ def create_plan(request: PlanRequest):
     """Decompose a feature request into an ordered list of subtasks."""
     try:
         if request.offline:
-            plan = planner.decompose_offline(request.feature_request)
+            plan = planner.decompose_offline(
+                request.feature_request,
+                file_manifest=request.file_manifest,
+                structural_map=request.structural_map,
+                rag_context=request.rag_context
+            )
         else:
-            plan = planner.decompose(request.feature_request)
+            plan = planner.decompose(
+                request.feature_request,
+                file_manifest=request.file_manifest,
+                structural_map=request.structural_map,
+                rag_context=request.rag_context
+            )
         return PlanResponse(**plan)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

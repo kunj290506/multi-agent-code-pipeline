@@ -11,9 +11,9 @@ Provides:
 
 import logging
 import os
-import sqlite3
+import db
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, Cookie, HTTPException
 from fastapi.responses import JSONResponse
@@ -41,6 +41,15 @@ JWT_EXPIRY_SECONDS: int = 86400  # 24 h
 
 # Cookie name used for session management.
 SESSION_COOKIE: str = "session"
+
+# Optional application hook invoked after a successful login.
+_login_hook: Callable[[], None] | None = None
+
+
+def set_login_hook(hook: Callable[[], None]) -> None:
+    """Register an application callback to run after successful login."""
+    global _login_hook
+    _login_hook = hook
 
 # ---------------------------------------------------------------------------
 # Password hashing
@@ -95,19 +104,17 @@ def decode_jwt(token: str) -> dict | None:
 
 def init_db() -> None:
     """Create the ``users`` table if it does not already exist."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                username         TEXT    UNIQUE NOT NULL,
-                email            TEXT    UNIQUE NOT NULL,
-                hashed_password  TEXT    NOT NULL,
-                created_at       TEXT    NOT NULL
-            )
-            """
+    db.execute_write(DB_PATH,
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            username         TEXT    UNIQUE NOT NULL,
+            email            TEXT    UNIQUE NOT NULL,
+            hashed_password  TEXT    NOT NULL,
+            created_at       TEXT    NOT NULL
         )
-        conn.commit()
+        """
+    )
     logger.info("Auth DB initialised at %s", DB_PATH)
 
 
@@ -163,15 +170,14 @@ def signup(req: SignupRequest) -> JSONResponse:
     created_at = datetime.now(timezone.utc).isoformat()
     hashed = hash_password(req.password)
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.execute(
-                "INSERT INTO users (username, email, hashed_password, created_at) VALUES (?, ?, ?, ?)",
-                (req.username, req.email, hashed, created_at),
-            )
-            conn.commit()
-            user_id: int = cursor.lastrowid  # type: ignore[assignment]
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=409, detail="Username or email already exists.")
+        user_id = db.execute_write(DB_PATH,
+            "INSERT INTO users (username, email, hashed_password, created_at) VALUES (?, ?, ?, ?)",
+            (req.username, req.email, hashed, created_at)
+        )
+    except Exception as exc:
+        if "UNIQUE constraint failed" in str(exc):
+            raise HTTPException(status_code=409, detail="Username or email already exists.")
+        raise
     logger.info("New user registered: %s (id=%d)", req.username, user_id)
     return _session_response(user_id, req.username)
 
@@ -182,14 +188,15 @@ def login(req: LoginRequest) -> JSONResponse:
 
     Returns 401 on bad credentials.
     """
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute(
-            "SELECT id, hashed_password FROM users WHERE username = ?",
-            (req.username,),
-        ).fetchone()
-    if row is None or not verify_password(req.password, row[1]):
+    rows = db.execute_query(DB_PATH,
+        "SELECT id, hashed_password FROM users WHERE username = ?",
+        (req.username,)
+    )
+    if not rows or not verify_password(req.password, rows[0]["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
-    user_id: int = row[0]
+    if _login_hook is not None:
+        _login_hook()
+    user_id: int = rows[0]["id"]
     logger.info("User logged in: %s (id=%d)", req.username, user_id)
     return _session_response(user_id, req.username)
 

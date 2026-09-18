@@ -67,7 +67,7 @@ def test_offline_decomposition() -> bool:
 
     for i, example in enumerate(EXAMPLE_REQUESTS[:2]):
         request_text = example["input"]
-        plan = planner.decompose(request_text)
+        plan = planner.decompose_offline(request_text)
 
         # Validate structure
         errors = planner._validate_plan(plan)
@@ -131,7 +131,7 @@ def test_json_extraction() -> bool:
 
     for i, (text, should_succeed) in enumerate(test_cases):
         try:
-            result = planner._extract_json(text)
+            planner._extract_json(text)
             if should_succeed:
                 print(f"  Case {i+1}: [PASS] Extracted JSON successfully.")
             else:
@@ -274,7 +274,8 @@ def test_ollama_integration() -> bool:
     _separator("Test: Ollama Integration (requires running server)")
     try:
         import requests
-        requests.get(f"{config.OLLAMA_BASE_URL}/api/tags", timeout=3)
+        response = requests.get(f"{config.OLLAMA_BASE_URL}/api/tags", timeout=3)
+        response.raise_for_status()
     except Exception:
         print("  [SKIP] Ollama server is not reachable.")
         return True
@@ -293,6 +294,9 @@ def test_ollama_integration() -> bool:
                 f"{task['description'][:50]}..."
             )
         print("  [PASS]")
+        return True
+    except requests.RequestException as exc:
+        print(f"  [SKIP] Ollama generation endpoint is unavailable: {exc}")
         return True
     except ValueError as exc:
         print(f"  [FAIL] {exc}")

@@ -12,11 +12,10 @@ import sys
 # Ensure the codegen-agent directory is on the Python path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import generator
-from spec_schema import ArtifactSpec, GeneratedArtifact
+from spec_schema import ArtifactSpec
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +292,8 @@ def run_tests():
                     "Online artifact has correct name",
                     artifact.name == "PingEndpoint",
                 )
+            except req.RequestException as exc:
+                print(f"  [SKIP] Ollama generation endpoint is unavailable: {exc}")
             except Exception as exc:
                 check("Online generation succeeds", False, str(exc))
         else:

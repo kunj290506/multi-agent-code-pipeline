@@ -123,13 +123,19 @@ Output schema:
 }"""
 
 
-def _build_prompt(feature_request: str) -> str:
+def _build_prompt(feature_request: str, file_manifest=None, structural_map=None, rag_context=None) -> str:
     """Construct the full prompt for the Ollama model."""
-    return (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"Feature request: {feature_request}\n\n"
-        f"Respond with the JSON plan:"
-    )
+    prompt = f"{SYSTEM_PROMPT}\n\nFeature request: {feature_request}\n\n"
+    
+    if file_manifest:
+        prompt += f"Project File Manifest:\n{file_manifest}\n\n"
+    if structural_map:
+        prompt += f"Project Structural Map:\n{structural_map}\n\n"
+    if rag_context:
+        prompt += f"RAG Context (Project Documentation & Chunks):\n{rag_context}\n\n"
+        
+    prompt += "Respond with the JSON plan:"
+    return prompt
 
 
 def _extract_json(text: str) -> dict:
@@ -211,7 +217,7 @@ def _validate_plan(plan: dict) -> list[str]:
     return errors
 
 
-def decompose(feature_request: str, max_retries: int = 2) -> dict:
+def decompose(feature_request: str, max_retries: int = 2, file_manifest=None, structural_map=None, rag_context=None) -> dict:
     """Decompose a feature request into a structured task plan.
 
     Calls the Ollama model to generate the plan, validates it, and retries
@@ -221,6 +227,9 @@ def decompose(feature_request: str, max_retries: int = 2) -> dict:
         feature_request: Plain-language description of the feature.
         max_retries: Number of additional attempts if the model output is
                      invalid JSON or fails schema validation.
+        file_manifest: Existing files manifest.
+        structural_map: Existing code structure map.
+        rag_context: RAG answers.
 
     Returns:
         A validated plan dict conforming to PLAN_SCHEMA.
@@ -228,7 +237,7 @@ def decompose(feature_request: str, max_retries: int = 2) -> dict:
     Raises:
         ValueError: If the model fails to produce valid output after all retries.
     """
-    prompt = _build_prompt(feature_request)
+    prompt = _build_prompt(feature_request, file_manifest, structural_map, rag_context)
 
     last_error = ""
     for attempt in range(1 + max_retries):
@@ -245,9 +254,11 @@ def decompose(feature_request: str, max_retries: int = 2) -> dict:
             "model": config.OLLAMA_MODEL,
             "prompt": prompt_with_correction,
             "stream": False,
+            "keep_alive": config.OLLAMA_KEEP_ALIVE,
             "options": {
                 "temperature": config.TEMPERATURE,
                 "num_predict": config.MAX_TOKENS,
+                "num_ctx": config.OLLAMA_CONTEXT_SIZE,
             },
         }
 
@@ -282,7 +293,7 @@ def decompose(feature_request: str, max_retries: int = 2) -> dict:
     )
 
 
-def decompose_offline(feature_request: str) -> dict:
+def decompose_offline(feature_request: str, file_manifest=None, structural_map=None, rag_context=None) -> dict:
     """Return a deterministic plan without calling the LLM.
 
     Useful for testing the validation and downstream processing logic
@@ -395,14 +406,17 @@ def decompose_offline(feature_request: str) -> dict:
     )
 
     if is_whole_project:
-        # Infer a simple project name from the request.
         app_name = feature_request.strip().rstrip(".").rstrip("!")
+        reasoning = (
+            f"Whole-project request detected: '{app_name}'. Scaffolding as separate "
+            "per-file codegen subtasks with target_filename."
+        )
+        if file_manifest or structural_map or rag_context:
+            reasoning += " (Context injected via file_manifest/structural_map/rag_context)"
+            
         return {
             "feature_request": feature_request,
-            "reasoning": (
-                f"Whole-project request detected: '{app_name}'. "
-                "Scaffolding as separate per-file codegen subtasks with target_filename."
-            ),
+            "reasoning": reasoning,
             "subtasks": [
                 {
                     "task_id": "task_1",

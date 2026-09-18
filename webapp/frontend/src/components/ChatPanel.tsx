@@ -150,6 +150,12 @@ function PlanApproval({
     setSubtasks(prev => prev.filter(s => s.task_id !== taskId))
   }
 
+  const setStrategy = (taskId: string, strategy: any) => {
+    setSubtasks(prev => prev.map(s => s.task_id === taskId ? { ...s, resolution_strategy: strategy } : s))
+  }
+
+  const hasBlocked = subtasks.some(s => s.preflight_status === 'blocked')
+
   const handleApprove = () => {
     if (subtasks.length === 0) return
     setApproving(true)
@@ -194,6 +200,28 @@ function PlanApproval({
                 )}
               </div>
               <div className="plan-step-desc">{task.description}</div>
+              {task.preflight_status && task.preflight_status !== 'ok' && (
+                <div className={`preflight-alert preflight-${task.preflight_status}`}>
+                  <div className="preflight-alert-text">⚠ {task.preflight_details}</div>
+                  {task.preflight_old_content !== undefined && (
+                    <div className="preflight-resolution">
+                      <label>Action:</label>
+                      <select 
+                        value={task.resolution_strategy || 'overwrite'}
+                        onChange={(e) => setStrategy(task.task_id, e.target.value)}
+                      >
+                        <option value="overwrite">Overwrite</option>
+                        <option value="rename">Rename</option>
+                        <option value="skip">Skip</option>
+                      </select>
+                      <details className="preflight-preview">
+                        <summary>Preview Existing File</summary>
+                        <pre>{task.preflight_old_content}</pre>
+                      </details>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <button
               className="plan-step-remove"
@@ -215,9 +243,9 @@ function PlanApproval({
         <button
           className="btn-primary plan-run-btn"
           onClick={handleApprove}
-          disabled={subtasks.length === 0 || approving}
+          disabled={subtasks.length === 0 || approving || hasBlocked}
         >
-          {approving ? 'APPROVING…' : 'RUN PLAN'}
+          {approving ? 'APPROVING…' : hasBlocked ? 'BLOCKED' : 'RUN PLAN'}
         </button>
         <button
           className="plan-cancel-btn"

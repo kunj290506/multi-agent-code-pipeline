@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { startRun, cancelRun, getRunStatus, getLogs, getLog, runProject, approvePlan } from '../api'
+import { startRun, cancelRun, getRunStatus, runProject, approvePlan } from '../api'
 import type { RunState, Subtask } from '../types'
 import FileExplorer from '../components/FileExplorer'
-import ProjectHistory from '../components/ProjectHistory'
 import CodeEditor from '../components/CodeEditor'
 import ChatPanel from '../components/ChatPanel'
 import TerminalPanel from '../components/TerminalPanel'
@@ -13,11 +12,11 @@ export default function IDEPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [openFiles, setOpenFiles] = useState<string[]>([])
+  const [activeFile, setActiveFile] = useState<string | null>(null)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [terminalProjectId, setTerminalProjectId] = useState<string | null>(null)
   const [runState, setRunState] = useState<RunState | null>(null)
-  // logs kept for future history panel; not yet rendered but fetched to stay fresh
-  const [_logs, setLogs] = useState<ReturnType<typeof getLogs> extends Promise<infer T> ? T : never[]>([])
   const [connected, setConnected] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [explorerRefresh, setExplorerRefresh] = useState(0)
@@ -25,6 +24,16 @@ export default function IDEPage() {
 
   const ws = useRef<WebSocket | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    setOpenFiles([])
+    setActiveFile(null)
+    setActiveRunId(null)
+    setTerminalProjectId(null)
+    setRunState(null)
+    setDiffData(null)
+    setExplorerRefresh(n => n + 1)
+  }, [user?.id])
 
   // WebSocket connection
   useEffect(() => {
@@ -50,8 +59,10 @@ export default function IDEPage() {
           }
           if (msg?.type === 'project_ready' && msg.request_id) {
             // Auto-run the completed project and open in a new tab
-            runProject(msg.request_id).then(result => {
+            const projectId = msg.request_id
+            runProject(projectId).then(result => {
               if (result.runnable && result.url) {
+                setTerminalProjectId(projectId)
                 window.open(result.url, '_blank', 'noopener,noreferrer')
               }
               // If not runnable, the reason will appear in the chat transcript via SSE steps
@@ -76,18 +87,6 @@ export default function IDEPage() {
     return () => ws.current?.close()
   }, [])
 
-  // Load run history
-  const refreshLogs = useCallback(async () => {
-    try {
-      const data = await getLogs()
-      setLogs(data)
-    } catch {
-      // backend not ready yet
-    }
-  }, [])
-
-  useEffect(() => { refreshLogs() }, [refreshLogs])
-
   // Poll active run status
   useEffect(() => {
     if (!activeRunId) return
@@ -100,7 +99,6 @@ export default function IDEPage() {
           pollRef.current = null
           setStopping(false)
           setExplorerRefresh(n => n + 1)
-          refreshLogs()
         }
       } catch {
         // ignore transient errors
@@ -111,7 +109,7 @@ export default function IDEPage() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [activeRunId, refreshLogs])
+  }, [activeRunId])
 
   const isRunning = runState?.status === 'running'
 
@@ -139,34 +137,16 @@ export default function IDEPage() {
       
       const data = await startRun(request, projectName || undefined, projectIdToPass)
       setActiveRunId(data.request_id)
+      setTerminalProjectId(null)
       setRunState(null)
       setStopping(false)
       if (!isFollowUp) {
-        setSelectedFile(null)          // clear editor — workspace is wiping
+        setOpenFiles([])
+        setActiveFile(null)
       }
       setExplorerRefresh(n => n + 1) // immediately refresh explorer
     } catch (err) {
       console.error('Failed to start run', err)
-    }
-  }
-
-  const handleSelectProject = async (projectId: string) => {
-    setActiveRunId(projectId)
-    setSelectedFile(null)
-    setExplorerRefresh(n => n + 1)
-    try {
-      // First try live status in case it's still running
-      const state = await getRunStatus(projectId)
-      setRunState(state)
-    } catch {
-      // If not live, fetch from logs
-      try {
-        const log = await getLog(projectId)
-        setRunState(log)
-      } catch (err) {
-        console.error('Failed to load project log', err)
-        setRunState(null)
-      }
     }
   }
 
@@ -211,6 +191,27 @@ export default function IDEPage() {
           <span className="ide-brand-name">Multi-Agent Pipeline</span>
         </div>
         <div className="ide-header-right">
+          {activeRunId && (
+            <button 
+              onClick={async () => {
+                try {
+                  const result = await runProject(activeRunId)
+                  if (result.runnable && result.url) {
+                    setTerminalProjectId(activeRunId)
+                     window.open(result.url, '_blank', 'noopener,noreferrer')
+                     alert(`Deployment Details\n\nURL: ${result.url}\n(Login details generated by LLM if applicable)`)
+                  } else {
+                     alert(`Failed to run: ${result.reason}`)
+                  }
+                } catch (err) {
+                  alert('Error running project')
+                }
+              }}
+              style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', marginRight: '16px', fontSize: '0.85rem' }}
+            >
+              ▶ Run Project
+            </button>
+          )}
           <div className={`conn-pill ${connected ? 'conn-on' : 'conn-off'}`}>
             <span className="conn-dot" />
             {connected ? 'Connected' : 'Disconnected'}
@@ -222,18 +223,18 @@ export default function IDEPage() {
 
       {/* Body — three panes */}
       <div className="ide-body">
-        {/* Left pane — project history + file explorer */}
+        {/* Left pane — current workspace files */}
         <div className="ide-pane-left" style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ height: '35%', minHeight: '200px' }}>
-            <ProjectHistory
-              activeProjectId={activeRunId}
-              onSelectProject={handleSelectProject}
-            />
-          </div>
-          <div style={{ flex: 1, minHeight: 0, borderTop: '1px solid var(--hairline)' }}>
+          <div style={{ flex: 1, minHeight: 0 }}>
             <FileExplorer
-              selectedPath={selectedFile}
-              onSelect={setSelectedFile}
+              selectedPath={activeFile}
+              onSelect={() => {}} // Single click just selects in tree natively, no-op here for IDEPage unless we want to track it
+              onDoubleClick={(path) => {
+                if (!openFiles.includes(path)) {
+                  setOpenFiles(prev => [...prev, path])
+                }
+                setActiveFile(path)
+              }}
               refreshTrigger={explorerRefresh}
               projectId={activeRunId ?? undefined}
             />
@@ -241,12 +242,30 @@ export default function IDEPage() {
         </div>
 
         {/* Center pane — code editor + terminal */}
-        <div className="ide-pane-center" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="ide-pane-center" style={{ display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          {!activeRunId && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'var(--bg-pane)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', textAlign: 'center', padding: '2rem' }}>
+              <h2 style={{ color: 'var(--fg-default)', marginBottom: '1rem' }}>Workspace Ready</h2>
+              <p>Type a prompt on the right (e.g. "make a calculator") to generate a new app.</p>
+            </div>
+          )}
           <div style={{ flex: 1, minHeight: 0 }}>
-            <CodeEditor selectedPath={selectedFile} diffData={diffData} />
+            <CodeEditor 
+              activeFile={activeFile} 
+              openFiles={openFiles} 
+              onSelectTab={setActiveFile} 
+              onCloseTab={(path) => {
+                const newFiles = openFiles.filter(f => f !== path)
+                setOpenFiles(newFiles)
+                if (activeFile === path) {
+                  setActiveFile(newFiles.length > 0 ? newFiles[newFiles.length - 1] : null)
+                }
+              }}
+              diffData={diffData} 
+            />
           </div>
           <div style={{ height: '30%', minHeight: '200px', borderTop: '1px solid var(--hairline)' }}>
-            <TerminalPanel projectId={activeRunId} />
+            <TerminalPanel projectId={terminalProjectId} enabled={terminalProjectId === activeRunId} />
           </div>
         </div>
 

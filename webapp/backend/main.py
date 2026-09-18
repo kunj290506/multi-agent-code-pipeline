@@ -80,6 +80,13 @@ PROJECTS_DIR: str = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "projects")
 )
 
+# Online model routing is the default so the request, not a local template,
+# determines the generated application. Set PIPELINE_OFFLINE=1 for testing.
+PIPELINE_OFFLINE: bool = os.getenv("PIPELINE_OFFLINE", "0") == "1"
+# Automatically execute a valid plan after Planner returns. Set to 1 to keep
+# the manual approval gate for review-heavy environments.
+REQUIRE_PLAN_APPROVAL: bool = os.getenv("REQUIRE_PLAN_APPROVAL", "0") == "1"
+
 AGENT_URLS: dict[str, str] = {
     "planner-agent": "http://localhost:8010/plan",
     "rag-agent": "http://localhost:8011/query",
@@ -111,6 +118,63 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+
+
+def reset_project_history() -> None:
+    """Remove generated workspaces and run state for a clean login session."""
+    for project in list(running_processes.values()):
+        process = project.get("process")
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+            except OSError:
+                logger.warning("Unable to stop generated project process.", exc_info=True)
+
+    running_processes.clear()
+    run_history.clear()
+    run_states.clear()
+    cancel_flags.clear()
+    approval_events.clear()
+    approved_plans.clear()
+    terminal_queues.clear()
+    terminal_buffers.clear()
+
+    os.makedirs(PROJECTS_DIR, exist_ok=True)
+    for entry in os.listdir(PROJECTS_DIR):
+        path = os.path.join(PROJECTS_DIR, entry)
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+        except OSError:
+            logger.warning("Unable to remove project history entry: %s", path, exc_info=True)
+
+    # Keep only the target app server wrapper; generated files belong to the
+    # previous login session and must not appear for the next user.
+    for entry in os.listdir(TARGET_APP_DIR):
+        if entry in {"app.py", "__pycache__"}:
+            continue
+        path = os.path.join(TARGET_APP_DIR, entry)
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+        except OSError:
+            logger.warning("Unable to remove target workspace entry: %s", path, exc_info=True)
+
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    for entry in os.listdir(LOGS_DIR):
+        if not entry.endswith(".json"):
+            continue
+        try:
+            os.remove(os.path.join(LOGS_DIR, entry))
+        except OSError:
+            logger.warning("Unable to remove run log: %s", entry, exc_info=True)
+
+
+auth.set_login_hook(reset_project_history)
 
 
 @app.on_event("startup")
@@ -301,17 +365,18 @@ async def _finalize_run(request_id: str, status: str) -> None:
         "status": status,
         "total_duration_ms": state["total_duration_ms"],
     })
-    # If this was a named project run that succeeded, tell the frontend it's ready to run.
-    if status == "success" and state.get("workspace_dir"):
+    # Signal every successful run; unnamed runs use the default target-app workspace.
+    if status == "success":
+        workspace_dir = state.get("workspace_dir") or TARGET_APP_DIR
         await _sse_push(request_id, {
             "type": "project_ready",
             "request_id": request_id,
-            "workspace_dir": state["workspace_dir"],
+            "workspace_dir": workspace_dir,
         })
         await broadcast({
             "type": "project_ready",
             "request_id": request_id,
-            "workspace_dir": state["workspace_dir"],
+            "workspace_dir": workspace_dir,
         })
     await _sse_close(request_id)
     await broadcast({"type": "done", "request_id": request_id, "status": status})
@@ -664,7 +729,7 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
         t0 = time.monotonic()
         plan = await call_agent(
             "planner-agent",
-            {"feature_request": feature_request, "offline": True},
+            {"feature_request": feature_request, "offline": PIPELINE_OFFLINE},
         )
         dur = int((time.monotonic() - t0) * 1000)
         if "subtasks" not in plan:
@@ -691,9 +756,8 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
         await _finalize_run(request_id, "error")
         return
 
-    # -- Step 1b: Pause for user approval ------------------------------------
+    # -- Step 1b: Optionally pause for user approval -------------------------
     state["plan"] = plan
-    state["status"] = "awaiting_approval"
     await _sse_push(request_id, {
         "type": "plan_ready",
         "request_id": request_id,
@@ -706,19 +770,20 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
     })
     logger.info("Run %s awaiting plan approval (%d subtasks)", request_id, len(plan.get("subtasks", [])))
 
-    # Block until the user approves or cancels.
-    evt = approval_events.get(request_id)
-    if evt:
-        await evt.wait()
-
-    # Check if cancelled during the approval wait.
-    if await _is_cancelled():
-        logger.info("Run %s cancelled during approval wait", request_id)
-        await _finalize_run(request_id, "cancelled")
-        return
-
-    # Use the approved subtask list (may be a subset of the original plan).
-    subtasks = approved_plans.pop(request_id, plan.get("subtasks", []))
+    if REQUIRE_PLAN_APPROVAL:
+        state["status"] = "awaiting_approval"
+        evt = approval_events.get(request_id)
+        if evt:
+            await evt.wait()
+        if await _is_cancelled():
+            logger.info("Run %s cancelled during approval wait", request_id)
+            await _finalize_run(request_id, "cancelled")
+            return
+        subtasks = approved_plans.pop(request_id, plan.get("subtasks", []))
+    else:
+        state["status"] = "running"
+        subtasks = plan.get("subtasks", [])
+        logger.info("Run %s auto-approving plan with %d subtasks", request_id, len(subtasks))
     state["plan"] = None  # Clear plan from live state after approval.
     context_str = ""
     last_codegen_artifact: dict | None = None
@@ -776,7 +841,7 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
 
             elif agent == "db-agent":
                 t0 = time.monotonic()
-                res = await call_agent("db-agent", {"description": desc, "offline": True})
+                res = await call_agent("db-agent", {"description": desc, "offline": PIPELINE_OFFLINE})
                 dur = int((time.monotonic() - t0) * 1000)
                 if "query" not in res:
                     raise ValueError(
@@ -815,7 +880,10 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
 
             elif agent == "codegen-agent":
                 codegen_res, review_res = await _run_codegen_with_review(
-                    desc, context_str, request_id
+                    desc,
+                    context_str,
+                    request_id,
+                    target_filename=task.get("target_filename"),
                 )
                 final_verdict = review_res.get("final_verdict", "unknown")
                 artifact = codegen_res.get("artifact", {})
@@ -908,6 +976,7 @@ async def _run_codegen_with_review(
     context_str: str,
     request_id: str,
     attempt_budget: int = 2,
+    target_filename: str | None = None,
 ) -> tuple[dict, dict]:
     """Call Code-Gen then Reviewer with up to attempt_budget total attempts.
 
@@ -929,7 +998,13 @@ async def _run_codegen_with_review(
     prior_issues: list = []
 
     for attempt in range(1, attempt_budget + 1):
-        payload: dict = {"description": desc, "context": context_str, "offline": True}
+        payload: dict = {
+            "description": desc,
+            "context": context_str,
+            "offline": PIPELINE_OFFLINE,
+        }
+        if target_filename:
+            payload["target_filename"] = target_filename
         if attempt > 1 and prior_issues:
             payload["prior_issues"] = prior_issues
 
@@ -1002,9 +1077,11 @@ async def _run_codegen_with_review(
 # ---------------------------------------------------------------------------
 
 def _get_workspace(request_id: str) -> str:
-    """Return the workspace directory for this run (project dir or default target-app)."""
-    state = run_states.get(request_id, {})
-    return state.get("workspace_dir") or TARGET_APP_DIR
+    """Return the workspace assigned to this run, defaulting to target-app."""
+    state = run_states.get(request_id)
+    if state is not None and state.get("workspace_dir"):
+        return state["workspace_dir"]
+    return TARGET_APP_DIR
 
 
 def _target_path(filename: str, workspace: str | None = None) -> str:
@@ -1133,11 +1210,31 @@ def _get_dir_structure(path: str) -> dict:
     if os.path.isdir(path):
         children = []
         for child in sorted(os.listdir(path)):
-            if child.startswith("."):
+            if child.startswith(".") or child == "__pycache__":
                 continue
             children.append(_get_dir_structure(os.path.join(path, child)))
         return {"name": name, "type": "folder", "path": path, "children": children}
     return {"name": name, "type": "file", "path": path}
+
+
+def _resolve_workspace_from_project_id(project_id: str | None) -> str:
+    """Resolve the workspace directory for a given project ID."""
+    if not project_id:
+        return TARGET_APP_DIR
+    if project_id in run_states:
+        return run_states[project_id].get("workspace_dir") or TARGET_APP_DIR
+        
+    # Check if we have a finished run matching this ID in projects/
+    if os.path.exists(PROJECTS_DIR):
+        for entry in os.listdir(PROJECTS_DIR):
+            wdir = os.path.join(PROJECTS_DIR, entry)
+            if not os.path.isdir(wdir):
+                continue
+            parts = entry.rsplit("_", 1)
+            req_id = parts[-1] if len(parts) > 1 else entry
+            if req_id == project_id:
+                return wdir
+    return TARGET_APP_DIR
 
 
 @app.get("/files")
@@ -1150,10 +1247,7 @@ def get_files(
     If project_id is provided and matches a known run, returns that run's
     workspace tree.  Otherwise returns the default target-app/ tree.
     """
-    if project_id and project_id in run_states:
-        target = run_states[project_id].get("workspace_dir") or TARGET_APP_DIR
-    else:
-        target = TARGET_APP_DIR
+    target = _resolve_workspace_from_project_id(project_id)
     if not os.path.exists(target):
         os.makedirs(target, exist_ok=True)
     return _get_dir_structure(target)
@@ -1176,6 +1270,8 @@ def get_file_content(path: str, current_user: dict = Depends(auth.get_current_us
             status_code=403,
             detail="Access denied: path is outside an allowed workspace.",
         )
+    if resolved.lower().endswith((".pyc", ".pyo")) or "\\__pycache__\\" in resolved.lower():
+        raise HTTPException(status_code=415, detail="Compiled Python files are not editable source files.")
     try:
         with open(resolved, "r", encoding="utf-8") as fh:
             return {"content": fh.read()}
@@ -1391,7 +1487,7 @@ async def run_project(
     state = run_states.get(project_id)
     if not state:
         raise HTTPException(status_code=404, detail=f"Run {project_id} not found.")
-    workspace_dir = state.get("workspace_dir")
+    workspace_dir = _resolve_workspace_from_project_id(project_id)
     if not workspace_dir or not os.path.isdir(workspace_dir):
         return {
             "runnable": False,

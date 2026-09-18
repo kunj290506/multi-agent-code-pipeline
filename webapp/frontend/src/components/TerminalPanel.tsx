@@ -3,6 +3,7 @@ import { BASE } from '../api'
 
 interface TerminalPanelProps {
   projectId: string | null
+  enabled: boolean
 }
 
 interface TerminalEvent {
@@ -11,13 +12,13 @@ interface TerminalEvent {
   line: string
 }
 
-export default function TerminalPanel({ projectId }: TerminalPanelProps) {
+export default function TerminalPanel({ projectId, enabled }: TerminalPanelProps) {
   const [lines, setLines] = useState<{ stream: string; line: string }[]>([])
   const [connected, setConnected] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!projectId) {
+    if (!projectId || !enabled) {
       setLines([])
       setConnected(false)
       return
@@ -55,7 +56,7 @@ export default function TerminalPanel({ projectId }: TerminalPanelProps) {
       eventSource.close()
       setConnected(false)
     }
-  }, [projectId])
+  }, [projectId, enabled])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -64,7 +65,7 @@ export default function TerminalPanel({ projectId }: TerminalPanelProps) {
     }
   }, [lines.length])
 
-  if (!projectId) {
+  if (!projectId || !enabled) {
     return (
       <div className="terminal-placeholder">
         No project running.
