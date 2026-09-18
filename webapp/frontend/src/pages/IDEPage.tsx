@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { startRun, cancelRun, getRunStatus, getLogs, runProject } from '../api'
-import type { RunState } from '../types'
+import { startRun, cancelRun, getRunStatus, getLogs, getLog, runProject, approvePlan } from '../api'
+import type { RunState, Subtask } from '../types'
 import FileExplorer from '../components/FileExplorer'
+import ProjectHistory from '../components/ProjectHistory'
 import CodeEditor from '../components/CodeEditor'
 import ChatPanel from '../components/ChatPanel'
+import TerminalPanel from '../components/TerminalPanel'
 
 export default function IDEPage() {
   const { user, logout } = useAuth()
@@ -19,6 +21,7 @@ export default function IDEPage() {
   const [connected, setConnected] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [explorerRefresh, setExplorerRefresh] = useState(0)
+  const [diffData, setDiffData] = useState<{ filename: string; previous_content: string | null; new_content: string } | null>(null)
 
   const ws = useRef<WebSocket | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -35,7 +38,13 @@ export default function IDEPage() {
       ws.current.onerror = () => ws.current?.close()
       ws.current.onmessage = (evt) => {
         try {
-          const msg = JSON.parse(evt.data as string) as { type: string; request_id?: string }
+          const msg = JSON.parse(evt.data as string) as {
+            type: string;
+            request_id?: string;
+            filename?: string;
+            previous_content?: string | null;
+            new_content?: string;
+          }
           if (msg?.type === 'file_update' || msg?.type === 'file_delete') {
             setExplorerRefresh(n => n + 1)
           }
@@ -48,6 +57,14 @@ export default function IDEPage() {
               // If not runnable, the reason will appear in the chat transcript via SSE steps
             }).catch(err => {
               console.error('Failed to auto-run project:', err)
+            })
+          }
+          // Capture file_written events for diff view
+          if (msg?.type === 'file_written' && msg.filename && msg.new_content !== undefined) {
+            setDiffData({
+              filename: msg.filename,
+              previous_content: msg.previous_content ?? null,
+              new_content: msg.new_content,
             })
           }
         } catch {
@@ -78,7 +95,7 @@ export default function IDEPage() {
       try {
         const state = await getRunStatus(activeRunId)
         setRunState(state)
-        if (state.status !== 'running') {
+        if (state.status !== 'running' && state.status !== 'awaiting_approval') {
           if (pollRef.current) clearInterval(pollRef.current)
           pollRef.current = null
           setStopping(false)
@@ -100,7 +117,8 @@ export default function IDEPage() {
 
   // Determine active agent for diagram
   const activeAgent: string | null = (() => {
-    if (!runState || runState.status !== 'running') return null
+    if (!runState || (runState.status !== 'running' && runState.status !== 'awaiting_approval')) return null
+    if (runState.status === 'awaiting_approval') return 'planner-agent'
     const steps = runState.steps
     if (steps.length === 0) return 'planner-agent'
     const last = steps[steps.length - 1]
@@ -116,19 +134,46 @@ export default function IDEPage() {
 
   const handleSubmit = async (request: string, projectName: string) => {
     try {
-      const data = await startRun(request, projectName || undefined)
+      const isFollowUp = !projectName && activeRunId
+      const projectIdToPass = isFollowUp ? activeRunId : undefined
+      
+      const data = await startRun(request, projectName || undefined, projectIdToPass)
       setActiveRunId(data.request_id)
       setRunState(null)
       setStopping(false)
-      setSelectedFile(null)          // clear editor — workspace is wiping
+      if (!isFollowUp) {
+        setSelectedFile(null)          // clear editor — workspace is wiping
+      }
       setExplorerRefresh(n => n + 1) // immediately refresh explorer
     } catch (err) {
       console.error('Failed to start run', err)
     }
   }
 
+  const handleSelectProject = async (projectId: string) => {
+    setActiveRunId(projectId)
+    setSelectedFile(null)
+    setExplorerRefresh(n => n + 1)
+    try {
+      // First try live status in case it's still running
+      const state = await getRunStatus(projectId)
+      setRunState(state)
+    } catch {
+      // If not live, fetch from logs
+      try {
+        const log = await getLog(projectId)
+        setRunState(log)
+      } catch (err) {
+        console.error('Failed to load project log', err)
+        setRunState(null)
+      }
+    }
+  }
+
   const handleStop = async () => {
-    if (!activeRunId || !isRunning || stopping) return
+    if (!activeRunId || stopping) return
+    // Allow stopping during both 'running' and 'awaiting_approval'
+    if (runState?.status !== 'running' && runState?.status !== 'awaiting_approval') return
     setStopping(true)
     try {
       await cancelRun(activeRunId)
@@ -137,10 +182,25 @@ export default function IDEPage() {
     }
   }
 
+  const handleApprove = async (subtasks: Subtask[]) => {
+    if (!activeRunId) return
+    try {
+      await approvePlan(activeRunId, subtasks as unknown as Array<Record<string, unknown>>)
+    } catch (err) {
+      console.error('Failed to approve plan', err)
+    }
+  }
+
+  const handleCancel = () => {
+    handleStop()
+  }
+
   const handleLogout = async () => {
     await logout()
     navigate('/login')
   }
+
+  const showStopButton = runState?.status === 'running' || runState?.status === 'awaiting_approval'
 
   return (
     <div className="ide-root">
@@ -162,19 +222,32 @@ export default function IDEPage() {
 
       {/* Body — three panes */}
       <div className="ide-body">
-        {/* Left pane — file explorer */}
-        <div className="ide-pane-left">
-          <FileExplorer
-            selectedPath={selectedFile}
-            onSelect={setSelectedFile}
-            refreshTrigger={explorerRefresh}
-            projectId={activeRunId ?? undefined}
-          />
+        {/* Left pane — project history + file explorer */}
+        <div className="ide-pane-left" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ height: '35%', minHeight: '200px' }}>
+            <ProjectHistory
+              activeProjectId={activeRunId}
+              onSelectProject={handleSelectProject}
+            />
+          </div>
+          <div style={{ flex: 1, minHeight: 0, borderTop: '1px solid var(--hairline)' }}>
+            <FileExplorer
+              selectedPath={selectedFile}
+              onSelect={setSelectedFile}
+              refreshTrigger={explorerRefresh}
+              projectId={activeRunId ?? undefined}
+            />
+          </div>
         </div>
 
-        {/* Center pane — code editor */}
-        <div className="ide-pane-center">
-          <CodeEditor selectedPath={selectedFile} />
+        {/* Center pane — code editor + terminal */}
+        <div className="ide-pane-center" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <CodeEditor selectedPath={selectedFile} diffData={diffData} />
+          </div>
+          <div style={{ height: '30%', minHeight: '200px', borderTop: '1px solid var(--hairline)' }}>
+            <TerminalPanel projectId={activeRunId} />
+          </div>
         </div>
 
         {/* Right pane — chat panel */}
@@ -183,13 +256,15 @@ export default function IDEPage() {
             runState={runState}
             isRunning={isRunning}
             onSubmit={handleSubmit}
+            onApprove={handleApprove}
+            onCancel={handleCancel}
             activeAgent={activeAgent}
           />
         </div>
       </div>
 
-      {/* STOP button — fixed bottom-right while running */}
-      {isRunning && (
+      {/* STOP button — fixed bottom-right while running or awaiting approval */}
+      {showStopButton && (
         <button
           className="stop-btn"
           onClick={handleStop}

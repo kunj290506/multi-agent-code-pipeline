@@ -55,9 +55,10 @@ export async function authLogout(): Promise<void> {
   await fetch(`${BASE}/auth/logout`, { method: 'POST', credentials: 'include' })
 }
 
-export async function startRun(request: string, projectName?: string): Promise<{ request_id: string }> {
+export async function startRun(request: string, projectName?: string, projectId?: string): Promise<{ request_id: string }> {
   const body: Record<string, string> = { request }
   if (projectName) body.project_name = projectName
+  if (projectId) body.project_id = projectId
   const res = await fetch(`${BASE}/runs`, {
     method: 'POST',
     credentials: 'include',
@@ -81,6 +82,11 @@ export async function getLogs(): Promise<LogEntry[]> {
   return checkResponse(res) as Promise<LogEntry[]>
 }
 
+export async function getLog(runId: string): Promise<RunState> {
+  const res = await fetch(`${BASE}/logs/${runId}`, { credentials: 'include' })
+  return checkResponse(res) as Promise<RunState>
+}
+
 export async function getFiles(projectId?: string): Promise<FileNode> {
   const url = projectId ? `${BASE}/files?project_id=${encodeURIComponent(projectId)}` : `${BASE}/files`
   const res = await fetch(url, { credentials: 'include' })
@@ -101,4 +107,34 @@ export async function runProject(
     credentials: 'include',
   })
   return checkResponse(res) as ReturnType<typeof runProject>
+}
+
+export async function approvePlan(
+  runId: string,
+  subtasks: Array<Record<string, unknown>>,
+): Promise<{ status: string; subtask_count: number }> {
+  const res = await fetch(`${BASE}/runs/${runId}/approve`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subtasks }),
+  })
+  return checkResponse(res) as Promise<{ status: string; subtask_count: number }>
+}
+
+export async function saveFile(path: string, content: string): Promise<{ status: string }> {
+  const res = await fetch(`${BASE}/file`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, content }),
+  })
+  return checkResponse(res) as Promise<{ status: string }>
+}
+
+import type { Project } from './types'
+
+export async function getProjects(): Promise<Project[]> {
+  const res = await fetch(`${BASE}/projects`, { credentials: 'include' })
+  return checkResponse(res) as Promise<Project[]>
 }

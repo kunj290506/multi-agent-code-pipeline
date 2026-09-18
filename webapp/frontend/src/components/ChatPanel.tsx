@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { RunState, Step } from '../types'
+import type { RunState, Step, Subtask } from '../types'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,6 +127,107 @@ function PipelineDiagram({ activeAgent }: { activeAgent: string | null }) {
         )
       })}
     </svg>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Plan Approval Component
+// ---------------------------------------------------------------------------
+function PlanApproval({
+  plan,
+  onApprove,
+  onCancel,
+}: {
+  plan: { subtasks: Subtask[]; reasoning?: string }
+  onApprove: (subtasks: Subtask[]) => void
+  onCancel: () => void
+}) {
+  const [subtasks, setSubtasks] = useState<Subtask[]>(plan.subtasks)
+  const [reasoningOpen, setReasoningOpen] = useState(false)
+  const [approving, setApproving] = useState(false)
+
+  const removeStep = (taskId: string) => {
+    setSubtasks(prev => prev.filter(s => s.task_id !== taskId))
+  }
+
+  const handleApprove = () => {
+    if (subtasks.length === 0) return
+    setApproving(true)
+    onApprove(subtasks)
+  }
+
+  const agentLabel = (agentId: string) =>
+    AGENTS.find(a => a.id === agentId)?.label ?? agentId
+
+  return (
+    <div className="plan-approval">
+      <div className="plan-approval-header">
+        <div className="plan-approval-title">PLAN READY — {subtasks.length} STEP{subtasks.length !== 1 ? 'S' : ''}</div>
+      </div>
+
+      {/* Reasoning block */}
+      {plan.reasoning && (
+        <div className="step-reasoning">
+          <div
+            className="step-reasoning-header"
+            onClick={() => setReasoningOpen(o => !o)}
+          >
+            <span>REASONING</span>
+            <span>{reasoningOpen ? '▾' : '▸'}</span>
+          </div>
+          {reasoningOpen && (
+            <div className="step-reasoning-body">{plan.reasoning}</div>
+          )}
+        </div>
+      )}
+
+      {/* Subtask list */}
+      <div className="plan-steps">
+        {subtasks.map((task, idx) => (
+          <div key={task.task_id} className="plan-step">
+            <div className="plan-step-num">{idx + 1}</div>
+            <div className="plan-step-body">
+              <div className="plan-step-meta">
+                <span className="plan-step-agent">{agentLabel(task.agent)}</span>
+                {task.target_filename && (
+                  <span className="plan-step-file">{task.target_filename}</span>
+                )}
+              </div>
+              <div className="plan-step-desc">{task.description}</div>
+            </div>
+            <button
+              className="plan-step-remove"
+              onClick={() => removeStep(task.task_id)}
+              title="Remove this step"
+              aria-label={`Remove step ${task.task_id}`}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        {subtasks.length === 0 && (
+          <div className="plan-steps-empty">All steps removed. Add steps back or cancel.</div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="plan-actions">
+        <button
+          className="btn-primary plan-run-btn"
+          onClick={handleApprove}
+          disabled={subtasks.length === 0 || approving}
+        >
+          {approving ? 'APPROVING…' : 'RUN PLAN'}
+        </button>
+        <button
+          className="plan-cancel-btn"
+          onClick={onCancel}
+          disabled={approving}
+        >
+          CANCEL
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -308,25 +409,30 @@ interface ChatPanelProps {
   runState: RunState | null
   isRunning: boolean
   onSubmit: (request: string, projectName: string) => Promise<void>
+  onApprove: (subtasks: Subtask[]) => Promise<void>
+  onCancel: () => void
   activeAgent: string | null
 }
 
 // ---------------------------------------------------------------------------
 // Chat Panel
 // ---------------------------------------------------------------------------
-export default function ChatPanel({ runState, isRunning, onSubmit, activeAgent }: ChatPanelProps) {
+export default function ChatPanel({ runState, isRunning, onSubmit, onApprove, onCancel, activeAgent }: ChatPanelProps) {
   const [prompt, setPrompt] = useState('')
   const [projectName, setProjectName] = useState('')
   const traceEndRef = useRef<HTMLDivElement>(null)
 
+  const isAwaitingApproval = runState?.status === 'awaiting_approval'
+  const inputDisabled = isRunning || isAwaitingApproval
+
   // Auto-scroll when new steps arrive
   useEffect(() => {
     traceEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [runState?.steps?.length])
+  }, [runState?.steps?.length, runState?.status])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!prompt.trim() || isRunning) return
+    if (!prompt.trim() || inputDisabled) return
     await onSubmit(prompt.trim(), projectName.trim())
     setPrompt('')
     setProjectName('')
@@ -362,6 +468,16 @@ export default function ChatPanel({ runState, isRunning, onSubmit, activeAgent }
             ))}
           </>
         )}
+
+        {/* Plan Approval UI — shown when status is awaiting_approval */}
+        {isAwaitingApproval && runState?.plan && (
+          <PlanApproval
+            plan={runState.plan}
+            onApprove={onApprove}
+            onCancel={onCancel}
+          />
+        )}
+
         <div ref={traceEndRef} />
       </div>
 
@@ -373,7 +489,7 @@ export default function ChatPanel({ runState, isRunning, onSubmit, activeAgent }
           rows={3}
           value={prompt}
           onChange={e => setPrompt(e.target.value)}
-          disabled={isRunning}
+          disabled={inputDisabled}
         />
         <input
           className="chat-project-input"
@@ -381,19 +497,19 @@ export default function ChatPanel({ runState, isRunning, onSubmit, activeAgent }
           placeholder="Project name (optional — leave blank to add to existing project)"
           value={projectName}
           onChange={e => setProjectName(e.target.value)}
-          disabled={isRunning}
+          disabled={inputDisabled}
         />
         <button
           className="btn-primary"
           type="submit"
-          disabled={!prompt.trim() || isRunning}
+          disabled={!prompt.trim() || inputDisabled}
         >
           RUN PIPELINE
         </button>
         {runState && (
           <div className="chat-run-status">
             <span className={`run-status-badge status-${runState.status}`}>
-              {runState.status.toUpperCase()}
+              {runState.status === 'awaiting_approval' ? 'AWAITING APPROVAL' : runState.status.toUpperCase()}
             </span>
             <span>{fmtTime(runState.started_at)}</span>
             {runState.total_duration_ms != null && (

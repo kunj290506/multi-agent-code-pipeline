@@ -32,6 +32,7 @@ HTTP requests.
 """
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -40,6 +41,7 @@ import signal as _signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
@@ -138,6 +140,15 @@ sse_queues: dict[str, asyncio.Queue] = {}
 # Running project processes: project_id -> {pid, port, url, type, process}
 running_processes: dict[str, dict[str, Any]] = {}
 
+# Plan-approval gates.  After Planner returns, the pipeline pauses and waits
+# for explicit user approval before dispatching subtasks.
+approval_events: dict[str, asyncio.Event] = {}
+approved_plans: dict[str, list[dict]] = {}
+
+# Terminal output streams for running projects.
+terminal_queues: dict[str, list[asyncio.Queue]] = {}
+terminal_buffers: dict[str, collections.deque] = {}
+
 # ---------------------------------------------------------------------------
 # WebSocket management (legacy, kept for backwards compat)
 # ---------------------------------------------------------------------------
@@ -217,10 +228,13 @@ def _init_run_state(request_id: str, feature_request: str, workspace_dir: str | 
         "steps": [],
         # Workspace dir this run writes files into (None = default target-app/)
         "workspace_dir": workspace_dir,
+        # Populated when Planner returns; cleared after approval.
+        "plan": None,
     }
     run_states[request_id] = state
     cancel_flags[request_id] = False
     sse_queues[request_id] = asyncio.Queue()
+    approval_events[request_id] = asyncio.Event()
     return state
 
 
@@ -310,6 +324,10 @@ async def _finalize_run(request_id: str, status: str) -> None:
 class RunRequest(BaseModel):
     """Request body for POST /runs (and POST /request alias)."""
     request: str = Field(..., min_length=1, description="Feature request in plain language.")
+    project_id: str | None = Field(
+        default=None,
+        description="ID of an existing run to follow up on. Skips workspace clear if provided.",
+    )
     project_name: str | None = Field(
         default=None,
         description=(
@@ -321,6 +339,17 @@ class RunRequest(BaseModel):
 
 # Alias kept for backwards compat.
 FeatureRequest = RunRequest
+
+
+class ApproveRequest(BaseModel):
+    """Request body for POST /runs/{request_id}/approve."""
+    subtasks: list[dict] = Field(
+        ...,
+        description=(
+            "The (possibly reduced) ordered list of subtasks the user has approved. "
+            "Each dict must contain at least: task_id, agent, description, dependencies."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +401,22 @@ async def start_run(req: RunRequest, current_user: dict = Depends(auth.get_curre
 
     # Resolve workspace directory.
     workspace_dir: str | None = None
-    if req.project_name:
+    is_followup = False
+
+    if req.project_id:
+        if req.project_id not in run_states and req.project_id not in [r["request_id"] for r in run_history]:
+            raise HTTPException(status_code=404, detail="Project ID not found for follow-up.")
+        # Try finding in active run_states first, then history
+        if req.project_id in run_states:
+            workspace_dir = run_states[req.project_id].get("workspace_dir")
+        else:
+            hist_run = next((r for r in run_history if r["request_id"] == req.project_id), None)
+            workspace_dir = hist_run.get("workspace_dir") if hist_run else None
+
+        if not workspace_dir:
+            workspace_dir = TARGET_APP_DIR
+        is_followup = True
+    elif req.project_name:
         # Sanitise project name: keep alphanumeric, hyphens, underscores only.
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in req.project_name)
         workspace_dir = os.path.join(PROJECTS_DIR, f"{safe_name}_{request_id}")
@@ -382,7 +426,7 @@ async def start_run(req: RunRequest, current_user: dict = Depends(auth.get_curre
     state = _init_run_state(request_id, req.request, workspace_dir=workspace_dir)
     run_history.append(state)
     # Fire the pipeline as a background task so this endpoint returns immediately.
-    asyncio.create_task(_run_pipeline(request_id, req.request))
+    asyncio.create_task(_run_pipeline(request_id, req.request, skip_clear=is_followup))
     await broadcast({"type": "start", "request_id": request_id, "request": req.request})
     return {
         "request_id": request_id,
@@ -399,15 +443,62 @@ async def cancel_run(request_id: str, current_user: dict = Depends(auth.get_curr
     next agent is dispatched.  A step already mid-call will finish that call
     before the cancellation takes effect — we do not hard-kill in-flight HTTP
     requests.
+
+    Also works during the 'awaiting_approval' phase — sets the flag and
+    unblocks the approval gate so the pipeline sees the cancellation.
     """
     if request_id not in run_states:
         raise HTTPException(status_code=404, detail=f"Run {request_id} not found.")
     state = run_states[request_id]
-    if state["status"] != "running":
+    if state["status"] not in ("running", "awaiting_approval"):
         return {"request_id": request_id, "status": state["status"], "message": "Run is not active."}
     cancel_flags[request_id] = True
+    # If waiting for approval, unblock the gate so the pipeline sees the cancel.
+    evt = approval_events.get(request_id)
+    if evt:
+        evt.set()
     logger.info("Cancellation requested for run %s", request_id)
     return {"request_id": request_id, "status": "cancellation_requested"}
+
+
+@app.post("/runs/{request_id}/approve")
+async def approve_plan(
+    request_id: str,
+    req: ApproveRequest,
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict:
+    """Approve the Planner's task plan and resume the pipeline.
+
+    The caller may remove steps from the original plan before approving.
+    The pipeline will execute only the subtasks included in req.subtasks.
+    """
+    if request_id not in run_states:
+        raise HTTPException(status_code=404, detail=f"Run {request_id} not found.")
+    state = run_states[request_id]
+    if state["status"] != "awaiting_approval":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run {request_id} is not awaiting approval (status={state['status']}).",
+        )
+    approved_plans[request_id] = req.subtasks
+    state["status"] = "running"
+    # Push an SSE event so streaming clients see the transition.
+    await _sse_push(request_id, {
+        "type": "plan_approved",
+        "request_id": request_id,
+        "subtask_count": len(req.subtasks),
+    })
+    await broadcast({
+        "type": "plan_approved",
+        "request_id": request_id,
+        "subtask_count": len(req.subtasks),
+    })
+    # Unblock the pipeline coroutine.
+    evt = approval_events.get(request_id)
+    if evt:
+        evt.set()
+    logger.info("Plan approved for run %s with %d subtasks", request_id, len(req.subtasks))
+    return {"request_id": request_id, "status": "approved", "subtask_count": len(req.subtasks)}
 
 
 @app.get("/runs/{request_id}/status")
@@ -441,7 +532,7 @@ async def run_events(request_id: str, current_user: dict = Depends(auth.get_curr
 
     async def _event_stream() -> AsyncGenerator[str, None]:
         # If finished, replay completed steps and return.
-        if state["status"] not in ("running",):
+        if state["status"] not in ("running", "awaiting_approval"):
             for step in state.get("steps", []):
                 yield _sse_format({"type": "step", "request_id": request_id, "step": step})
             yield _sse_format({
@@ -547,20 +638,25 @@ def get_log(request_id: str) -> dict:
 # Pipeline execution
 # ---------------------------------------------------------------------------
 
-async def _run_pipeline(request_id: str, feature_request: str) -> None:
+async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool = False) -> None:
     """Execute the full five-agent pipeline for a given request.
 
     Updates run_states[request_id] in real time after each agent call.
     Checks cancel_flags[request_id] at each step boundary.
+
+    After the Planner returns, the pipeline transitions to 'awaiting_approval'
+    and blocks until the user explicitly approves (via POST /approve) or
+    cancels.  The approved subtask list may be a subset of the original plan.
     """
     state = run_states[request_id]
 
     async def _is_cancelled() -> bool:
         return cancel_flags.get(request_id, False)
 
-    # -- Step 0: Clear workspace so every prompt builds from scratch -----------
+    # -- Step 0: Clear workspace (skip if follow-up) --------------------------
     workspace = _get_workspace(request_id)
-    await _clear_workspace(workspace, request_id)
+    if not skip_clear:
+        await _clear_workspace(workspace, request_id)
 
     # -- Step 1: Planner -------------------------------------------------------
     await broadcast({"type": "log", "agent": "Planner", "message": "Planning tasks...", "request_id": request_id})
@@ -595,7 +691,35 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
         await _finalize_run(request_id, "error")
         return
 
-    subtasks = plan.get("subtasks", [])
+    # -- Step 1b: Pause for user approval ------------------------------------
+    state["plan"] = plan
+    state["status"] = "awaiting_approval"
+    await _sse_push(request_id, {
+        "type": "plan_ready",
+        "request_id": request_id,
+        "plan": plan,
+    })
+    await broadcast({
+        "type": "plan_ready",
+        "request_id": request_id,
+        "plan": plan,
+    })
+    logger.info("Run %s awaiting plan approval (%d subtasks)", request_id, len(plan.get("subtasks", [])))
+
+    # Block until the user approves or cancels.
+    evt = approval_events.get(request_id)
+    if evt:
+        await evt.wait()
+
+    # Check if cancelled during the approval wait.
+    if await _is_cancelled():
+        logger.info("Run %s cancelled during approval wait", request_id)
+        await _finalize_run(request_id, "cancelled")
+        return
+
+    # Use the approved subtask list (may be a subset of the original plan).
+    subtasks = approved_plans.pop(request_id, plan.get("subtasks", []))
+    state["plan"] = None  # Clear plan from live state after approval.
     context_str = ""
     last_codegen_artifact: dict | None = None
     # workspace already resolved above (step 0)
@@ -709,7 +833,24 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
                 })
 
                 if code and final_verdict in ("pass", "exhausted"):
+                    # Read previous content for diff (None = new file).
+                    prev_path = os.path.join(workspace, filename)
+                    previous_content: str | None = None
+                    if os.path.isfile(prev_path):
+                        try:
+                            with open(prev_path, "r", encoding="utf-8") as fh:
+                                previous_content = fh.read()
+                        except Exception:
+                            pass
                     _write_to_workspace(filename, code, workspace)
+                    # Push file_written event with real diff data.
+                    await _sse_push(request_id, {
+                        "type": "file_written",
+                        "request_id": request_id,
+                        "filename": filename,
+                        "previous_content": previous_content,
+                        "new_content": code,
+                    })
                     await broadcast({
                         "type": "log", "agent": "System",
                         "message": f"Wrote {filename} (verdict: {final_verdict})",
@@ -1044,6 +1185,39 @@ def get_file_content(path: str, current_user: dict = Depends(auth.get_current_us
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+class SaveFileRequest(BaseModel):
+    """Request body for PUT /file."""
+    path: str = Field(..., description="Absolute path to the file to save.")
+    content: str = Field(..., description="New file content.")
+
+
+@app.put("/file")
+def save_file(req: SaveFileRequest, current_user: dict = Depends(auth.get_current_user)) -> dict:
+    """Write content to a file inside an allowed workspace.
+
+    Same path-safety validation as GET /file.  Does NOT re-trigger the pipeline.
+    """
+    resolved = os.path.realpath(req.path)
+    allowed_roots = [os.path.realpath(TARGET_APP_DIR), os.path.realpath(PROJECTS_DIR)]
+
+    def _is_allowed(p: str) -> bool:
+        return any(p.startswith(root) for root in allowed_roots)
+
+    if not _is_allowed(resolved):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: path is outside an allowed workspace.",
+        )
+    try:
+        os.makedirs(os.path.dirname(resolved), exist_ok=True)
+        with open(resolved, "w", encoding="utf-8") as fh:
+            fh.write(req.content)
+        logger.info("Manual file save: %s", resolved)
+        return {"status": "saved", "path": resolved}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/projects")
 def list_projects(current_user: dict = Depends(auth.get_current_user)) -> list[dict]:
     """Return a list of all project workspaces created by named runs.
@@ -1051,21 +1225,65 @@ def list_projects(current_user: dict = Depends(auth.get_current_user)) -> list[d
     Each entry contains: request_id, workspace_dir, feature_request, status, file_count.
     """
     result: list[dict] = []
-    for rid, state in run_states.items():
-        wdir = state.get("workspace_dir")
-        if not wdir:
+    if not os.path.exists(PROJECTS_DIR):
+        return result
+        
+    for entry in os.listdir(PROJECTS_DIR):
+        wdir = os.path.join(PROJECTS_DIR, entry)
+        if not os.path.isdir(wdir):
             continue
-        file_count = 0
-        if os.path.exists(wdir):
-            for _, _, files in os.walk(wdir):
-                file_count += len(files)
+            
+        parts = entry.rsplit("_", 1)
+        request_id = parts[-1] if len(parts) > 1 else entry
+        
+        file_count = sum(len(files) for _, _, files in os.walk(wdir))
+        
+        feature_request = "Unknown"
+        status = "unknown"
+        timestamp = 0
+        
+        # Check active run states
+        if request_id in run_states:
+            state = run_states[request_id]
+            feature_request = state.get("feature_request", feature_request)
+            status = state.get("status", status)
+            try:
+                if "started_at" in state:
+                    dt = datetime.fromisoformat(state["started_at"].replace("Z", "+00:00"))
+                    timestamp = dt.timestamp()
+            except Exception:
+                pass
+        else:
+            # Check logs on disk
+            log_path = os.path.join(LOGS_DIR, f"{request_id}.json")
+            if os.path.isfile(log_path):
+                try:
+                    with open(log_path, "r", encoding="utf-8") as fh:
+                        log_data = json.load(fh)
+                        feature_request = log_data.get("feature_request", feature_request)
+                        status = log_data.get("status", status)
+                        if "started_at" in log_data:
+                            dt = datetime.fromisoformat(log_data["started_at"].replace("Z", "+00:00"))
+                            timestamp = dt.timestamp()
+                except Exception:
+                    pass
+                    
+        # If timestamp is still 0, use folder mtime
+        if timestamp == 0:
+            timestamp = os.path.getmtime(wdir)
+            
         result.append({
-            "request_id": rid,
+            "request_id": request_id,
+            "project_name": parts[0] if len(parts) > 1 else "Unknown",
             "workspace_dir": wdir,
-            "feature_request": state.get("feature_request", ""),
-            "status": state.get("status", "unknown"),
+            "feature_request": feature_request,
+            "status": status,
             "file_count": file_count,
+            "timestamp": timestamp,
         })
+        
+    # Sort newest first
+    result.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
     return result
 
 
@@ -1252,6 +1470,15 @@ async def run_project(
             "type": project_type,
             "process": process,
         }
+
+        # Initialize terminal buffer and queues
+        terminal_buffers.setdefault(project_id, collections.deque(maxlen=500))
+        terminal_queues.setdefault(project_id, [])
+
+        loop = asyncio.get_running_loop()
+        threading.Thread(target=_stream_fd, args=(process.stdout, project_id, "stdout", loop), daemon=True).start()
+        threading.Thread(target=_stream_fd, args=(process.stderr, project_id, "stderr", loop), daemon=True).start()
+
         logger.info("Project %s running at %s (pid=%d)", project_id, url, process.pid)
         return {
             "runnable": True,
@@ -1288,25 +1515,77 @@ def get_project_run_status(
 
 
 @app.post("/projects/{project_id}/stop")
-def stop_project(
-    project_id: str,
-    current_user: dict = Depends(auth.get_current_user),
-) -> dict:
-    """Kill a running project process."""
-    info = running_processes.pop(project_id, None)
-    if not info:
-        return {"status": "not_running"}
-    process = info["process"]
+async def stop_project_app(project_id: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
+    """Kill the running process for the given project."""
+    state = running_processes.get(project_id)
+    if not state:
+        return {"project_id": project_id, "status": "not_running"}
+    process = state["process"]
     try:
         if sys.platform == "win32":
-            process.send_signal(_signal.CTRL_BREAK_EVENT)  # type: ignore[attr-defined]
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True)
         else:
-            process.terminate()
-        process.wait(timeout=5)
-    except Exception:
-        process.kill()
-    logger.info("Project %s stopped (pid=%d)", project_id, info["pid"])
-    return {"status": "stopped", "pid": info["pid"]}
+            os.killpg(os.getpgid(process.pid), _signal.SIGKILL)
+    except Exception as exc:
+        logger.warning("Error stopping process for %s: %s", project_id, exc)
+    finally:
+        del running_processes[project_id]
+    logger.info("Project %s stopped.", project_id)
+    return {"project_id": project_id, "status": "stopped"}
+
+
+def _stream_fd(fd, project_id: str, stream_name: str, loop: asyncio.AbstractEventLoop):
+    """Read a subprocess file descriptor and push lines to the terminal buffer."""
+    if not fd:
+        return
+    buffer = terminal_buffers.get(project_id)
+    if buffer is None:
+        return
+    for line in iter(fd.readline, b""):
+        text = line.decode(errors="replace")
+        event = {"type": "terminal_output", "project_id": project_id, "stream": stream_name, "line": text}
+        buffer.append(event)
+        for q in list(terminal_queues.get(project_id, [])):
+            loop.call_soon_threadsafe(q.put_nowait, event)
+    # Process died or FD closed
+    close_event = {"type": "terminal_close", "project_id": project_id, "stream": stream_name}
+    buffer.append(close_event)
+    for q in list(terminal_queues.get(project_id, [])):
+        loop.call_soon_threadsafe(q.put_nowait, close_event)
+
+
+@app.get("/projects/{project_id}/terminal")
+async def project_terminal_stream(
+    project_id: str,
+    current_user: dict = Depends(auth.get_current_user),
+) -> StreamingResponse:
+    """Stream terminal stdout/stderr for a running project via SSE."""
+    if project_id not in running_processes and project_id not in terminal_buffers:
+        raise HTTPException(status_code=404, detail="No terminal session found for this project.")
+
+    q: asyncio.Queue = asyncio.Queue()
+    terminal_queues.setdefault(project_id, []).append(q)
+
+    async def _stream():
+        try:
+            # Replay buffer
+            if project_id in terminal_buffers:
+                for event in list(terminal_buffers[project_id]):
+                    yield _sse_format(event)
+            
+            # Stream live events
+            while True:
+                event = await q.get()
+                yield _sse_format(event)
+                # Keep streaming until the client disconnects or the process is stopped manually.
+                # Disconnect handles cleanup.
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if project_id in terminal_queues and q in terminal_queues[project_id]:
+                terminal_queues[project_id].remove(q)
+
+    return StreamingResponse(_stream(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------

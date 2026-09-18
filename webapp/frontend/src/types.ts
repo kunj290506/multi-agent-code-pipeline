@@ -1,3 +1,17 @@
+export interface Subtask {
+  task_id: string
+  agent: string
+  description: string
+  dependencies: string[]
+  target_filename?: string
+}
+
+export interface Plan {
+  feature_request: string
+  subtasks: Subtask[]
+  reasoning?: string
+}
+
 export interface Step {
   agent: string
   status: 'done' | 'failed' | 'cancelled' | 'running'
@@ -15,9 +29,10 @@ export interface RunState {
   feature_request: string
   started_at: string
   completed_at: string | null
-  status: 'running' | 'success' | 'error' | 'cancelled'
+  status: 'running' | 'success' | 'error' | 'cancelled' | 'awaiting_approval'
   total_duration_ms: number | null
   steps: Step[]
+  plan?: Plan | null
 }
 
 export interface LogEntry {
@@ -36,4 +51,14 @@ export interface FileNode {
   type: 'file' | 'folder'
   path: string
   children?: FileNode[]
+}
+
+export interface Project {
+  request_id: string
+  project_name: string
+  workspace_dir: string
+  feature_request: string
+  status: string
+  file_count: number
+  timestamp: number
 }
