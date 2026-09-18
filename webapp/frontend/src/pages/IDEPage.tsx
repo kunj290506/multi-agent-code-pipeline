@@ -36,7 +36,7 @@ export default function IDEPage() {
       ws.current.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data as string) as { type: string; request_id?: string }
-          if (msg?.type === 'file_update') {
+          if (msg?.type === 'file_update' || msg?.type === 'file_delete') {
             setExplorerRefresh(n => n + 1)
           }
           if (msg?.type === 'project_ready' && msg.request_id) {
@@ -120,6 +120,8 @@ export default function IDEPage() {
       setActiveRunId(data.request_id)
       setRunState(null)
       setStopping(false)
+      setSelectedFile(null)          // clear editor — workspace is wiping
+      setExplorerRefresh(n => n + 1) // immediately refresh explorer
     } catch (err) {
       console.error('Failed to start run', err)
     }

@@ -124,61 +124,26 @@ docker compose up -d
 # Default credentials: admin / changeme
 ```
 
-**Step 4 — Start each agent (in separate terminals)**
+**Step 4 — Start all services (2 windows only)**
 
-```bash
-# Planner Agent — port 8010
-cd planner-agent
-pip install -r requirements.txt
-uvicorn api:app --host 0.0.0.0 --port 8010 --reload
+```powershell
+# Windows — opens 2 terminals: one backend, one frontend
+.\scripts\start_all.bat
 
-# RAG Agent — port 8011
-cd rag-agent
-pip install -r requirements.txt
-uvicorn api:app --host 0.0.0.0 --port 8011 --reload
+# or PowerShell
+.\scripts\start_all.ps1
 
-# DB Agent (query generator) — port 8012
-cd db-agent
-pip install -r requirements.txt
-uvicorn api:app --host 0.0.0.0 --port 8012 --reload
-
-# DB Agent (executor) — port 8013
-uvicorn executor_api:app --host 0.0.0.0 --port 8013 --reload
-
-# CodeGen Agent — port 8014
-cd codegen-agent
-pip install -r requirements.txt
-uvicorn api:app --host 0.0.0.0 --port 8014 --reload
-
-# Reviewer Agent — port 8015
-cd reviewer-agent
-pip install -r requirements.txt
-uvicorn api:app --host 0.0.0.0 --port 8015 --reload
+# Linux / macOS
+bash scripts/start_all.sh
 ```
 
-**Step 5 — Start the webapp backend**
+This starts all 8 backend agents inside a **single** terminal window via
+`scripts/launch_backend.py`, and the Vite frontend in a second window.
 
-```bash
-cd webapp/backend
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8020 --reload
-```
+**Step 5 — Open the UI**
 
-**Step 6 — Start the webapp frontend**
-
-```bash
-cd webapp/frontend
-npm install
-npm run dev
-# Frontend available at http://localhost:5173
-```
-
-**Step 7 — Import the n8n workflow**
-
-1. Open n8n at `http://localhost:5678` (credentials: `admin` / `changeme`)
-2. Go to **Workflows → Import from file**
-3. Select `n8n/workflow.json`
-4. Activate the workflow
+Navigate to **http://localhost:5173**, sign up (first time), then type a
+prompt and click **Run Pipeline**.
 
 ### Ollama Manual Commands
 
@@ -200,14 +165,24 @@ curl -X POST http://localhost:11434/api/generate \
 
 ```
 multi-agent-code-pipeline/
-├── planner-agent/     # Planner / Orchestrator agent
-├── rag-agent/         # RAG / Documentation retrieval agent
-├── codegen-agent/     # Code generation agent
-├── reviewer-agent/    # Code review & QA agent
-├── db-agent/          # Database migration & query agent
-├── target-app/        # Sample full-stack application
+├── agents/
+│   ├── planner/       # Planner / Orchestrator agent        :8010
+│   ├── rag/           # RAG / Documentation retrieval agent :8011
+│   ├── db/            # Database migration & query agent    :8012–8013
+│   ├── codegen/       # Code generation agent               :8014
+│   └── reviewer/      # Code review & QA agent              :8015
+├── webapp/
+│   ├── backend/       # Orchestration API + auth            :8020
+│   └── frontend/      # React IDE / UI                      :5173
+├── target-app/        # Workspace where generated files land :8000
+├── scripts/
+│   ├── launch_backend.py  # Single-window backend launcher
+│   ├── start_all.bat      # Windows 2-window startup
+│   ├── start_all.ps1      # PowerShell 2-window startup
+│   └── start_all.sh       # Linux/macOS startup
+├── eval/              # Evaluation harness (12 test cases)
 ├── n8n/               # n8n workflow definitions
-├── docker-compose.yml # Infrastructure services
+├── docker-compose.yml # Infrastructure services (n8n)
 └── .gitignore
 ```
 
@@ -221,7 +196,7 @@ The evaluation set consists of 12 test cases that measure success rate, retry ra
 1. All services must be running (use `scripts/start_all.ps1` or `scripts/start_all.sh`)
 2. The RAG agent must have ingested the target-app codebase:
    ```bash
-   cd rag-agent
+   cd agents/rag
    python ingest.py
    ```
 
