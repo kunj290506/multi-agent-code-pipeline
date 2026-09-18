@@ -368,13 +368,31 @@ def decompose_offline(feature_request: str) -> dict:
         }
 
     # Detect whole-project requests by keyword heuristic.
-    # If project_name is set (from API layer), caller should have already triggered per-file plan.
-    # This fallback handles "build a X app" / "create a X" patterns in offline mode.
+    # Handles a wide range of natural phrasings: "build a X", "create a X",
+    # "I want a X app", "write me a X", "give me a X app", etc.
+    # The goal is to catch any phrasing where the user is asking for a complete
+    # new standalone application rather than a feature on an existing project.
     whole_project_keywords = [
-        "build a ", "create a ", "make a ", "scaffold a ", "generate a ",
-        "build an ", "create an ", "make an ",
+        "build a ", "build an ",
+        "create a ", "create an ",
+        "make a ", "make an ",
+        "scaffold a ", "scaffold an ",
+        # "generate a" omitted — too broad: also matches "Generate a REST endpoint"
+        "write a ", "write an ",
+        "i want a ", "i want an ",
+        "give me a ", "give me an ",
+        "write me a ", "write me an ",
+        "develop a ", "develop an ",
+        "design a ", "design an ",
     ]
-    is_whole_project = any(kw in feature_request_lower for kw in whole_project_keywords)
+    # Also treat any request ending in "app", "application", "website", "webapp",
+    # "web app", "tool", "game" as a whole-project request if no feature verb is present.
+    whole_project_suffixes = ["app", "application", "website", "web app", "webapp", "tool", "game", "calculator", "dashboard"]
+    ends_with_project_noun = any(feature_request_lower.rstrip(".! ").endswith(suf) for suf in whole_project_suffixes)
+    is_whole_project = (
+        any(kw in feature_request_lower for kw in whole_project_keywords)
+        or ends_with_project_noun
+    )
 
     if is_whole_project:
         # Infer a simple project name from the request.

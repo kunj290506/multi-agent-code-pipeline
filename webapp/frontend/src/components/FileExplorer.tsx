@@ -6,6 +6,8 @@ interface FileExplorerProps {
   selectedPath: string | null
   onSelect: (path: string) => void
   refreshTrigger: number
+  /** When set, the explorer shows the workspace for this run ID instead of the default target-app/. */
+  projectId?: string
 }
 
 function TreeNode({
@@ -58,7 +60,7 @@ function TreeNode({
   )
 }
 
-export default function FileExplorer({ selectedPath, onSelect, refreshTrigger }: FileExplorerProps) {
+export default function FileExplorer({ selectedPath, onSelect, refreshTrigger, projectId }: FileExplorerProps) {
   const [root, setRoot] = useState<FileNode | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -67,7 +69,7 @@ export default function FileExplorer({ selectedPath, onSelect, refreshTrigger }:
     let cancelled = false
     setLoading(true)
     setError(null)
-    getFiles()
+    getFiles(projectId)
       .then(data => {
         if (!cancelled) {
           setRoot(data)
@@ -81,7 +83,7 @@ export default function FileExplorer({ selectedPath, onSelect, refreshTrigger }:
         }
       })
     return () => { cancelled = true }
-  }, [refreshTrigger])
+  }, [refreshTrigger, projectId])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>

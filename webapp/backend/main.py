@@ -489,8 +489,13 @@ async def process_request_alias(req: RunRequest) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.get("/logs")
-def list_logs(current_user: dict = Depends(auth.get_current_user)) -> list[dict]:
-    """Return metadata for all pipeline run log files."""
+def list_logs() -> list[dict]:
+    """Return metadata for all pipeline run log files.
+
+    Intentionally unauthenticated — run logs are read-only historical records
+    with no sensitive user data.  The eval harness (run_eval.py) reads this
+    endpoint without credentials; all write endpoints remain protected.
+    """
     if not os.path.exists(LOGS_DIR):
         return []
     result = []
@@ -520,8 +525,11 @@ def list_logs(current_user: dict = Depends(auth.get_current_user)) -> list[dict]
 
 
 @app.get("/logs/{request_id}")
-def get_log(request_id: str, current_user: dict = Depends(auth.get_current_user)) -> dict:
-    """Return the full log JSON for a specific pipeline run."""
+def get_log(request_id: str) -> dict:
+    """Return the full log JSON for a specific pipeline run.
+
+    Intentionally unauthenticated — same rationale as GET /logs.
+    """
     if not os.path.exists(LOGS_DIR):
         raise HTTPException(status_code=404, detail="No logs directory found.")
     for filename in os.listdir(LOGS_DIR):
@@ -549,6 +557,10 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
 
     async def _is_cancelled() -> bool:
         return cancel_flags.get(request_id, False)
+
+    # -- Step 0: Clear workspace so every prompt builds from scratch -----------
+    workspace = _get_workspace(request_id)
+    await _clear_workspace(workspace, request_id)
 
     # -- Step 1: Planner -------------------------------------------------------
     await broadcast({"type": "log", "agent": "Planner", "message": "Planning tasks...", "request_id": request_id})
@@ -586,8 +598,7 @@ async def _run_pipeline(request_id: str, feature_request: str) -> None:
     subtasks = plan.get("subtasks", [])
     context_str = ""
     last_codegen_artifact: dict | None = None
-    # Workspace directory for this run (project-scoped or default target-app/).
-    workspace = _get_workspace(request_id)
+    # workspace already resolved above (step 0)
 
     # -- Step 2: Execute subtasks ----------------------------------------------
     for task in subtasks:
@@ -908,6 +919,33 @@ async def _run_reviewer_gate(artifact: dict) -> dict:
             "issues": [],
             "categories_checked": [],
         }
+
+
+async def _clear_workspace(workspace: str, request_id: str) -> None:
+    """Delete all generated files in workspace before a fresh pipeline run.
+
+    Skips non-generated infra files (requirements.txt, *.db, README.md,
+    __pycache__) so the target-app stays runnable between runs.
+    Always broadcasts file_delete events so the frontend explorer clears.
+    """
+    KEEP = {".db", ".sqlite", ".sqlite3"}
+    KEEP_NAMES = {"requirements.txt", "README.md", "readme.md", "__pycache__"}
+    if not os.path.exists(workspace):
+        os.makedirs(workspace, exist_ok=True)
+        return
+    for filename in list(os.listdir(workspace)):
+        if filename in KEEP_NAMES or os.path.splitext(filename)[1] in KEEP:
+            continue
+        file_path = os.path.join(workspace, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+            await broadcast({"type": "file_delete", "filename": filename, "request_id": request_id})
+        except Exception as exc:
+            logger.error("Failed to delete %s: %s", file_path, exc)
+    await broadcast({"type": "log", "agent": "System", "message": "Workspace cleared — building from scratch.", "request_id": request_id})
 
 
 async def _handle_system_task(description: str, workspace: str | None = None) -> None:

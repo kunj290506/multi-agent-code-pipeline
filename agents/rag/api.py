@@ -68,6 +68,14 @@ class QueryResponse(BaseModel):
     num_chunks_used: int
     confidence: float = Field(default=0.0, description="Similarity confidence score 0-1")
     low_confidence: bool = Field(default=True, description="True if confidence < 0.5")
+    reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Optional explanation of the retrieval reasoning — why these chunks "
+            "were selected or why confidence is low. Produced by the LLM when "
+            "online; null (never synthesized) when running in offline/heuristic mode."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

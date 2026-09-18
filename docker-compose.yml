@@ -63,7 +63,7 @@ services:
 
   # planner-agent:
   #   build:
-  #     context: ./planner-agent
+  #     context: ./agents/planner
   #   container_name: planner-agent
   #   restart: unless-stopped
   #   ports:
@@ -78,7 +78,7 @@ services:
 
   # rag-agent:
   #   build:
-  #     context: ./rag-agent
+  #     context: ./agents/rag
   #   container_name: rag-agent
   #   restart: unless-stopped
   #   ports:
@@ -93,7 +93,7 @@ services:
 
   # codegen-agent:
   #   build:
-  #     context: ./codegen-agent
+  #     context: ./agents/codegen
   #   container_name: codegen-agent
   #   restart: unless-stopped
   #   ports:
@@ -108,7 +108,7 @@ services:
 
   # reviewer-agent:
   #   build:
-  #     context: ./reviewer-agent
+  #     context: ./agents/reviewer
   #   container_name: reviewer-agent
   #   restart: unless-stopped
   #   ports:
@@ -123,7 +123,7 @@ services:
 
   # db-agent:
   #   build:
-  #     context: ./db-agent
+  #     context: ./agents/db
   #   container_name: db-agent
   #   restart: unless-stopped
   #   ports:
@@ -157,7 +157,6 @@ services:
 # ─────────────────────────────────────────────
 volumes:
   n8n_data:
-  ollama_data:
 
 # ─────────────────────────────────────────────
 #  Networks

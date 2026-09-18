@@ -1,66 +1,79 @@
-# Multi-Agent Pipeline — Start All Services (Windows PowerShell)
-# Run this script from the repo root: .\scripts\start_all.ps1
+# Multi-Agent Pipeline — Start All Services (2 windows only)
+# Run from the repo root: .\scripts\start_all.ps1
+#
+# Window 1 — Backend  : all 8 Python agents in one terminal via launch_backend.py
+# Window 2 — Frontend : Vite dev server (npm run dev)
 #
 # Prerequisites:
-#   - Ollama installed and running on the host (http://localhost:11434)
-#   - Python 3.11+ in PATH with all agent requirements installed
-#   - Node.js 18+ in PATH (for webapp frontend)
-#   - Docker Desktop running (for n8n)
-#
-# Each agent starts in a new PowerShell window.
-# Close all windows to stop the services.
+#   - Python 3.11+ with all agent requirements installed
+#   - Node.js 18+ with webapp/frontend node_modules installed
+#   - Ollama running on the host (http://localhost:11434)  [optional for offline mode]
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
-Write-Host "Starting n8n (Docker)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot'; docker compose up"
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  MULTI-AGENT PIPELINE STARTUP" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
+
+# ── Install / verify Python deps (silent, fast on repeat runs) ───────────────
+Write-Host ""
+Write-Host "[1/3] Installing Python dependencies (skipped if already satisfied)..." -ForegroundColor Yellow
+python -m pip install `
+    -r "$RepoRoot\agents\planner\requirements.txt" `
+    -r "$RepoRoot\agents\rag\requirements.txt" `
+    -r "$RepoRoot\agents\codegen\requirements.txt" `
+    -r "$RepoRoot\agents\reviewer\requirements.txt" `
+    -r "$RepoRoot\agents\db\requirements.txt" `
+    -r "$RepoRoot\webapp\backend\requirements.txt" `
+    -r "$RepoRoot\target-app\requirements.txt" `
+    -q 2>$null
+
+# ── Install frontend deps (silent, fast on repeat runs) ──────────────────────
+Write-Host "[2/3] Installing frontend dependencies (skipped if up to date)..." -ForegroundColor Yellow
+Push-Location "$RepoRoot\webapp\frontend"
+npm install --silent 2>$null
+Pop-Location
+
+# ── Launch 2 windows ─────────────────────────────────────────────────────────
+Write-Host "[3/3] Launching 2 terminal windows..." -ForegroundColor Yellow
+
+# Window 1: all backend services in a single Python process
+Start-Process powershell -ArgumentList `
+    "-NoExit", `
+    "-Command", `
+    "Set-Location '$RepoRoot'; python scripts/launch_backend.py"
+
+Start-Sleep -Seconds 5   # let agents bind ports before frontend starts
+
+# Window 2: Vite frontend
+Start-Process powershell -ArgumentList `
+    "-NoExit", `
+    "-Command", `
+    "Set-Location '$RepoRoot\webapp\frontend'; npm run dev"
 
 Start-Sleep -Seconds 3
 
-Write-Host "Starting Target App (port 8000)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\target-app'; python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload"
-
-Start-Sleep -Seconds 2
-
-Write-Host "Starting Planner Agent (port 8010)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\planner-agent'; python -m uvicorn api:app --host 0.0.0.0 --port 8010 --reload"
-
-Write-Host "Starting RAG Agent (port 8011)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\rag-agent'; python -m uvicorn api:app --host 0.0.0.0 --port 8011 --reload"
-
-Write-Host "Starting DB Query Agent (port 8012)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\db-agent'; python -m uvicorn api:app --host 0.0.0.0 --port 8012 --reload"
-
-Write-Host "Starting DB Executor Agent (port 8013)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\db-agent'; python -m uvicorn executor_api:app --host 0.0.0.0 --port 8013 --reload"
-
-Write-Host "Starting CodeGen Agent (port 8014)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\codegen-agent'; python -m uvicorn api:app --host 0.0.0.0 --port 8014 --reload"
-
-Write-Host "Starting Reviewer Agent (port 8015)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\reviewer-agent'; python -m uvicorn api:app --host 0.0.0.0 --port 8015 --reload"
-
-Start-Sleep -Seconds 2
-
-Write-Host "Starting Webapp Backend (port 8020)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\webapp\backend'; python -m uvicorn main:app --host 0.0.0.0 --port 8020 --reload"
-
-Write-Host "Starting Webapp Frontend (port 5173)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$RepoRoot\webapp\frontend'; npm run dev"
-
 Write-Host ""
-Write-Host "All services started." -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  ALL SERVICES STARTED (2 windows)" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Service URLs:" -ForegroundColor Yellow
-Write-Host "  Target App:       http://localhost:8000/docs"
-Write-Host "  Planner Agent:    http://localhost:8010/docs"
-Write-Host "  RAG Agent:        http://localhost:8011/docs"
-Write-Host "  DB Query Agent:   http://localhost:8012/docs"
-Write-Host "  DB Executor:      http://localhost:8013/docs"
-Write-Host "  CodeGen Agent:    http://localhost:8014/docs"
-Write-Host "  Reviewer Agent:   http://localhost:8015/docs"
-Write-Host "  Webapp Backend:   http://localhost:8020/docs"
-Write-Host "  Webapp Frontend:  http://localhost:5173"
-Write-Host "  n8n Dashboard:    http://localhost:5678  (admin / changeme)"
+Write-Host "  MAIN UI        http://localhost:5173" -ForegroundColor White
 Write-Host ""
-Write-Host "Run the evaluation: python eval/run_eval.py" -ForegroundColor Yellow
+Write-Host "  Agent APIs (Swagger):" -ForegroundColor Gray
+Write-Host "    Target App      http://localhost:8000/docs" -ForegroundColor Gray
+Write-Host "    Planner         http://localhost:8010/docs" -ForegroundColor Gray
+Write-Host "    RAG             http://localhost:8011/docs" -ForegroundColor Gray
+Write-Host "    DB Query        http://localhost:8012/docs" -ForegroundColor Gray
+Write-Host "    DB Executor     http://localhost:8013/docs" -ForegroundColor Gray
+Write-Host "    CodeGen         http://localhost:8014/docs" -ForegroundColor Gray
+Write-Host "    Reviewer        http://localhost:8015/docs" -ForegroundColor Gray
+Write-Host "    Webapp Backend  http://localhost:8020/docs" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  FIRST-TIME ONLY: ingest docs into RAG vector store:" -ForegroundColor Yellow
+Write-Host "    cd rag-agent; python ingest.py" -ForegroundColor Yellow
+Write-Host ""
+
+# Auto-open browser
+Start-Process "http://localhost:5173"

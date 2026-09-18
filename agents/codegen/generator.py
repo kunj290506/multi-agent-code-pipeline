@@ -296,6 +296,229 @@ _OFFLINE_TEMPLATES = {
             """Revert the migration."""
             conn.execute("DROP TABLE IF EXISTS {snake_name}")
     '''),
+    # ── Web artifact templates ──────────────────────────────────────────────
+
+    ("html_page", "html", "none"): textwrap.dedent('''\
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>{name}</title>
+          <link rel="stylesheet" href="style.css" />
+        </head>
+        <body>
+          <!-- {description} -->
+          <div id="app">
+            <h1>{name}</h1>
+            <div id="display" class="display">0</div>
+            <div id="buttons" class="buttons">
+              <button class="btn btn-clear" onclick="clearDisplay()">C</button>
+              <button class="btn" onclick="appendToDisplay('/')">÷</button>
+              <button class="btn" onclick="appendToDisplay('*')">×</button>
+              <button class="btn" onclick="appendToDisplay('-')">−</button>
+              <button class="btn" onclick="appendToDisplay('7')">7</button>
+              <button class="btn" onclick="appendToDisplay('8')">8</button>
+              <button class="btn" onclick="appendToDisplay('9')">9</button>
+              <button class="btn" onclick="appendToDisplay('+')">+</button>
+              <button class="btn" onclick="appendToDisplay('4')">4</button>
+              <button class="btn" onclick="appendToDisplay('5')">5</button>
+              <button class="btn" onclick="appendToDisplay('6')">6</button>
+              <button class="btn btn-equals" onclick="calculate()">=</button>
+              <button class="btn" onclick="appendToDisplay('1')">1</button>
+              <button class="btn" onclick="appendToDisplay('2')">2</button>
+              <button class="btn" onclick="appendToDisplay('3')">3</button>
+              <button class="btn btn-wide" onclick="appendToDisplay('0')">0</button>
+              <button class="btn" onclick="appendToDisplay('.')">.</button>
+            </div>
+          </div>
+          <script src="script.js"></script>
+        </body>
+        </html>
+    '''),
+
+    ("stylesheet", "css", "none"): textwrap.dedent('''\
+        /* {description} */
+        *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+        body {{
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #1a1a2e;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }}
+
+        #app {{
+          background: #16213e;
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+          width: 320px;
+        }}
+
+        h1 {{
+          color: #e2e2e2;
+          font-size: 14px;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+          margin-bottom: 16px;
+          text-align: center;
+        }}
+
+        .display {{
+          background: #0f3460;
+          color: #e2e2e2;
+          font-size: 36px;
+          text-align: right;
+          padding: 16px 20px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+          min-height: 64px;
+          word-break: break-all;
+          overflow: hidden;
+        }}
+
+        .buttons {{
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 8px;
+        }}
+
+        .btn {{
+          background: #1a1a2e;
+          color: #e2e2e2;
+          border: 1px solid #0f3460;
+          border-radius: 8px;
+          padding: 18px 0;
+          font-size: 18px;
+          cursor: pointer;
+          transition: background 0.15s;
+        }}
+
+        .btn:hover {{ background: #0f3460; }}
+        .btn:active {{ background: #e94560; color: #fff; }}
+
+        .btn-clear {{ background: #e94560; color: #fff; }}
+        .btn-clear:hover {{ background: #c73652; }}
+
+        .btn-equals {{
+          background: #e94560;
+          color: #fff;
+          grid-row: span 2;
+        }}
+        .btn-equals:hover {{ background: #c73652; }}
+
+        .btn-wide {{ grid-column: span 2; }}
+    '''),
+
+    ("script", "javascript", "none"): textwrap.dedent('''\
+        // {description}
+        // Generated in offline mode — implements calculator logic.
+
+        (function () {{
+          'use strict';
+
+          let expression = '';
+          let justCalculated = false;
+
+          function updateDisplay(value) {{
+            const display = document.getElementById('display');
+            if (display) display.textContent = value || '0';
+          }}
+
+          window.appendToDisplay = function (value) {{
+            // After a result, start a fresh expression unless appending an operator.
+            if (justCalculated) {{
+              if (['+', '-', '*', '/'].includes(value)) {{
+                justCalculated = false;
+              }} else {{
+                expression = '';
+                justCalculated = false;
+              }}
+            }}
+            // Prevent double operators.
+            const lastChar = expression.slice(-1);
+            if (['+', '-', '*', '/'].includes(lastChar) && ['+', '-', '*', '/'].includes(value)) {{
+              expression = expression.slice(0, -1);
+            }}
+            expression += value;
+            updateDisplay(expression);
+          }};
+
+          window.clearDisplay = function () {{
+            expression = '';
+            justCalculated = false;
+            updateDisplay('0');
+          }};
+
+          window.calculate = function () {{
+            if (!expression) return;
+            try {{
+              // Use Function constructor to safely evaluate arithmetic only.
+              const sanitised = expression.replace(/[^0-9+\-*/().]/g, '');
+              // eslint-disable-next-line no-new-func
+              const result = Function('"use strict"; return (' + sanitised + ')')();
+              if (!isFinite(result)) {{
+                updateDisplay('Error');
+                expression = '';
+              }} else {{
+                const formatted = parseFloat(result.toFixed(10)).toString();
+                updateDisplay(formatted);
+                expression = formatted;
+                justCalculated = true;
+              }}
+            }} catch (err) {{
+              updateDisplay('Error');
+              expression = '';
+            }}
+          }};
+
+          // Keyboard support.
+          document.addEventListener('keydown', function (e) {{
+            if (e.key >= '0' && e.key <= '9') window.appendToDisplay(e.key);
+            else if (e.key === '+') window.appendToDisplay('+');
+            else if (e.key === '-') window.appendToDisplay('-');
+            else if (e.key === '*') window.appendToDisplay('*');
+            else if (e.key === '/') {{ e.preventDefault(); window.appendToDisplay('/'); }}
+            else if (e.key === '.') window.appendToDisplay('.');
+            else if (e.key === 'Enter' || e.key === '=') window.calculate();
+            else if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') window.clearDisplay();
+            else if (e.key === 'Backspace') {{
+              expression = expression.slice(0, -1);
+              updateDisplay(expression || '0');
+            }}
+          }});
+        }})();
+    '''),
+
+    ("documentation", "markdown", "none"): textwrap.dedent('''\
+        # {name}
+
+        > {description}
+
+        ## Overview
+
+        This project was generated by the multi-agent code pipeline.
+
+        ## Files
+
+        | File | Purpose |
+        |------|---------|
+        | `index.html` | Main HTML structure |
+        | `style.css` | Styles and layout |
+        | `script.js` | Interactive behaviour |
+
+        ## Usage
+
+        Open `index.html` in a browser to run the app locally.
+        The pipeline backend can also serve it automatically via `http.server`.
+
+        ## Generated by
+
+        Multi-Agent Code Pipeline (offline mode)
+    '''),
 }
 
 
@@ -306,12 +529,31 @@ def _to_snake_case(name: str) -> str:
 
 
 def _suggest_filename(spec: ArtifactSpec) -> str:
-    """Suggest a filename based on the artifact spec."""
+    """Suggest a filename based on the artifact type and language.
+
+    For web artifact types the canonical filename is returned directly so that
+    the generated file always lands at the right path (index.html, style.css, …)
+    regardless of the spec's `name` field.
+    """
+    # Web / document types: canonical filenames
+    canonical = {
+        "html_page": "index.html",
+        "stylesheet": "style.css",
+        "script": "script.js",
+        "documentation": "README.md",
+    }
+    if spec.artifact_type in canonical:
+        return canonical[spec.artifact_type]
+
     snake = _to_snake_case(spec.name)
     ext_map = {
         "python": ".py",
         "javascript": ".jsx",
         "typescript": ".tsx",
+        "html": ".html",
+        "css": ".css",
+        "sql": ".sql",
+        "markdown": ".md",
     }
     ext = ext_map.get(spec.language, ".py")
     return f"{snake}{ext}"
@@ -332,12 +574,20 @@ def generate_artifact_offline(spec: ArtifactSpec) -> GeneratedArtifact:
     snake_name = _to_snake_case(spec.name)
     route_path = snake_name.replace("_", "-")
 
+    # Build a constraints comment block for offline output so the diff is
+    # visible between attempt 1 and retry attempts (prior_issues wired via
+    # spec.constraints by the API layer).
+    constraints_comment = ""
+    if spec.constraints:
+        lines = "\n".join(f"  - {c}" for c in spec.constraints)
+        constraints_comment = f"<!-- Constraints:\n{lines}\n-->\n" if spec.language in ("html", "css") else f"# Constraints:\n{lines.replace('  -', '#  -')}\n"
+
     # Find a matching template.
     key = (spec.artifact_type, spec.language, spec.framework)
     template = _OFFLINE_TEMPLATES.get(key)
 
     if template is None:
-        # Try matching just the artifact type with default language.
+        # Try matching just the artifact type.
         for tpl_key, tpl in _OFFLINE_TEMPLATES.items():
             if tpl_key[0] == spec.artifact_type:
                 template = tpl
@@ -368,13 +618,19 @@ def generate_artifact_offline(spec: ArtifactSpec) -> GeneratedArtifact:
         artifact_type=spec.artifact_type,
     )
 
+    # Prepend constraints comment if this is a retry (constraints were set).
+    if constraints_comment and spec.constraints:
+        code = constraints_comment + code
+
+    filename = _suggest_filename(spec)
+
     return GeneratedArtifact(
         artifact_type=spec.artifact_type,
         name=spec.name,
         language=spec.language,
         framework=spec.framework,
         code=code,
-        filename=_suggest_filename(spec),
+        filename=filename,
         dependencies=spec.dependencies,
         explanation=f"Offline-generated {spec.artifact_type} artifact for '{spec.name}'.",
         warnings=["Generated in offline mode using templates, not LLM."],

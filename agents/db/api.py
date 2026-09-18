@@ -68,6 +68,14 @@ class GenerateResponse(BaseModel):
     explanation: str
     assumptions: list[str] = []
     safety_check: SafetyCheckResult
+    reasoning: str | None = Field(
+        default=None,
+        description=(
+            "Optional explanation of how the query was constructed — why particular "
+            "tables/columns were chosen or safety rules applied. Produced by the LLM "
+            "when online; null (never synthesized) when running in offline/heuristic mode."
+        ),
+    )
 
 
 class ValidateRequest(BaseModel):

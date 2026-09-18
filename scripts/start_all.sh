@@ -2,84 +2,56 @@
 # Multi-Agent Pipeline — Start All Services (Linux / macOS)
 # Run from repo root: bash scripts/start_all.sh
 #
+# Window 1 (this terminal): all Python backend agents via launch_backend.py
+# Window 2: Vite frontend (opened in background)
+#
 # Prerequisites:
-#   - Ollama installed and running on the host (http://localhost:11434)
 #   - Python 3.11+ with all agent requirements installed
 #   - Node.js 18+ (for webapp frontend)
-#   - Docker running (for n8n)
+#   - Ollama running on the host (http://localhost:11434)  [optional for offline mode]
 
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PIDS=()
 
-cleanup() {
-    echo ""
-    echo "Stopping all services..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-    done
-    exit 0
-}
-trap cleanup SIGINT SIGTERM
+echo ""
+echo "============================================================"
+echo "  MULTI-AGENT PIPELINE STARTUP"
+echo "============================================================"
 
-echo "Starting n8n (Docker)..."
-docker compose --project-directory "$REPO_ROOT" up -d
+# ── Install Python deps (fast / silent on repeat runs) ───────────────────────
+echo "[1/3] Installing Python dependencies..."
+python -m pip install \
+    -r "$REPO_ROOT/agents/planner/requirements.txt" \
+    -r "$REPO_ROOT/agents/rag/requirements.txt" \
+    -r "$REPO_ROOT/agents/codegen/requirements.txt" \
+    -r "$REPO_ROOT/agents/reviewer/requirements.txt" \
+    -r "$REPO_ROOT/agents/db/requirements.txt" \
+    -r "$REPO_ROOT/webapp/backend/requirements.txt" \
+    -r "$REPO_ROOT/target-app/requirements.txt" \
+    -q
 
-echo "Starting Target App (port 8000)..."
-(cd "$REPO_ROOT/target-app" && python -m uvicorn app:app --host 0.0.0.0 --port 8000) &
-PIDS+=($!)
-sleep 2
+# ── Install frontend deps ─────────────────────────────────────────────────────
+echo "[2/3] Installing frontend dependencies..."
+(cd "$REPO_ROOT/webapp/frontend" && npm install --silent)
 
-echo "Starting Planner Agent (port 8010)..."
-(cd "$REPO_ROOT/planner-agent" && python -m uvicorn api:app --host 0.0.0.0 --port 8010) &
-PIDS+=($!)
-
-echo "Starting RAG Agent (port 8011)..."
-(cd "$REPO_ROOT/rag-agent" && python -m uvicorn api:app --host 0.0.0.0 --port 8011) &
-PIDS+=($!)
-
-echo "Starting DB Query Agent (port 8012)..."
-(cd "$REPO_ROOT/db-agent" && python -m uvicorn api:app --host 0.0.0.0 --port 8012) &
-PIDS+=($!)
-
-echo "Starting DB Executor Agent (port 8013)..."
-(cd "$REPO_ROOT/db-agent" && python -m uvicorn executor_api:app --host 0.0.0.0 --port 8013) &
-PIDS+=($!)
-
-echo "Starting CodeGen Agent (port 8014)..."
-(cd "$REPO_ROOT/codegen-agent" && python -m uvicorn api:app --host 0.0.0.0 --port 8014) &
-PIDS+=($!)
-
-echo "Starting Reviewer Agent (port 8015)..."
-(cd "$REPO_ROOT/reviewer-agent" && python -m uvicorn api:app --host 0.0.0.0 --port 8015) &
-PIDS+=($!)
-
-sleep 2
-
-echo "Starting Webapp Backend (port 8020)..."
-(cd "$REPO_ROOT/webapp/backend" && python -m uvicorn main:app --host 0.0.0.0 --port 8020) &
-PIDS+=($!)
-
-echo "Starting Webapp Frontend (port 5173)..."
+# ── Launch frontend in background ────────────────────────────────────────────
+echo "[3/3] Starting frontend in background (port 5173)..."
 (cd "$REPO_ROOT/webapp/frontend" && npm run dev) &
-PIDS+=($!)
+FRONTEND_PID=$!
 
 echo ""
-echo "All services started. Press Ctrl+C to stop all."
+echo "============================================================"
+echo "  Starting all backend services in this window..."
+echo "============================================================"
 echo ""
-echo "Service URLs:"
-echo "  Target App:       http://localhost:8000/docs"
-echo "  Planner Agent:    http://localhost:8010/docs"
-echo "  RAG Agent:        http://localhost:8011/docs"
-echo "  DB Query Agent:   http://localhost:8012/docs"
-echo "  DB Executor:      http://localhost:8013/docs"
-echo "  CodeGen Agent:    http://localhost:8014/docs"
-echo "  Reviewer Agent:   http://localhost:8015/docs"
-echo "  Webapp Backend:   http://localhost:8020/docs"
-echo "  Webapp Frontend:  http://localhost:5173"
-echo "  n8n Dashboard:    http://localhost:5678  (admin / changeme)"
+echo "  Frontend:       http://localhost:5173  (pid $FRONTEND_PID)"
+echo "  Webapp Backend: http://localhost:8020/docs"
 echo ""
-echo "Run the evaluation: python eval/run_eval.py"
+echo "  Press Ctrl+C to stop everything."
+echo "============================================================"
+echo ""
 
-wait
+# ── Run all backend agents in this window (single process, labelled logs) ────
+trap "kill $FRONTEND_PID 2>/dev/null; exit 0" SIGINT SIGTERM
+python "$REPO_ROOT/scripts/launch_backend.py"

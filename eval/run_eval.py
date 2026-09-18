@@ -139,10 +139,15 @@ def run_case(case: dict, base_url: str, timeout: int) -> dict:
     # -----------------------------------------------------------------------
     # All other cases — POST /request then poll /logs
     # -----------------------------------------------------------------------
+    body: dict = {"request": feature_request}
+    # If the case has a project_name, forward it so a named workspace is created.
+    if case.get("project_name"):
+        body["project_name"] = case["project_name"]
+
     try:
         post_resp = requests.post(
             f"{base_url}/request",
-            json={"request": feature_request},
+            json=body,
             timeout=30,
         )
         post_resp.raise_for_status()
