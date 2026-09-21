@@ -43,14 +43,15 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator
 
 import httpx
 import auth
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,31 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+
+
+# ---------------------------------------------------------------------------
+# FIX 4: Global exception handler
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch any unhandled exception in an endpoint and return a clean JSON error.
+
+    This prevents raw 500 responses with no body reaching the frontend, and
+    ensures the real traceback is always written to the backend log.
+    """
+    tb = traceback.format_exc()
+    logger.error(
+        "Unhandled exception in %s %s\n%s",
+        request.method, request.url.path, tb,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Internal server error: {type(exc).__name__}: {exc}",
+            "traceback": tb,
+        },
+    )
 
 
 def reset_project_history() -> None:
@@ -294,6 +320,8 @@ def _init_run_state(request_id: str, feature_request: str, workspace_dir: str | 
         "workspace_dir": workspace_dir,
         # Populated when Planner returns; cleared after approval.
         "plan": None,
+        # LLM backend used for this run (ollama | groq | groq-fallback-ollama)
+        "llm_provider": os.getenv("LLM_PROVIDER", "ollama"),
     }
     run_states[request_id] = state
     cancel_flags[request_id] = False
@@ -422,14 +450,56 @@ class ApproveRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 async def call_agent(agent_name: str, payload: dict) -> dict:
-    """Call a downstream agent API and return the JSON response."""
+    """Call a downstream agent API and return the JSON response.
+
+    FIX 4 additions:
+    - Distinguishes 'agent not running' (ConnectError) from 'agent HTTP error'
+      so the error message surfaced to the frontend is actionable.
+    - Logs the real traceback for every non-2xx response including the body.
+    - Validates that the response is parseable JSON before returning.
+    """
     url = AGENT_URLS.get(agent_name)
     if not url:
         raise ValueError(f"Unknown agent: {agent_name}")
-    async with httpx.AsyncClient(timeout=300) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
+    # Planner can take >300s on a complex prompt on constrained hardware.
+    # CodeGen with a long context can also exceed 180s. Use 600s across the board.
+    try:
+        async with httpx.AsyncClient(timeout=600) as client:
+            response = await client.post(url, json=payload)
+    except httpx.ConnectError as exc:
+        raise RuntimeError(
+            f"Agent '{agent_name}' is not reachable at {url} — "
+            f"is the backend running?  (ConnectError: {exc})"
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(
+            f"Agent '{agent_name}' timed out after 600s at {url}. "
+            f"(TimeoutException: {exc})"
+        ) from exc
+
+    if not response.is_success:
+        # Log the body so the backend log shows what the agent actually returned.
+        body = response.text[:2000]
+        logger.error(
+            "Agent '%s' returned HTTP %d from %s\nBody: %s",
+            agent_name, response.status_code, url, body,
+        )
+        raise RuntimeError(
+            f"Agent '{agent_name}' returned HTTP {response.status_code} "
+            f"from {url}. Body: {body[:400]}"
+        )
+
+    try:
         return response.json()
+    except Exception as exc:
+        body = response.text[:2000]
+        logger.error(
+            "Agent '%s' returned non-JSON from %s\nBody: %s", agent_name, url, body
+        )
+        raise RuntimeError(
+            f"Agent '{agent_name}' returned non-JSON response from {url}: {exc}. "
+            f"Body: {body[:400]}"
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

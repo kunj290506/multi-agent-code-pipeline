@@ -8,12 +8,19 @@ Loads the persisted ChromaDB vector store and provides a function that:
 """
 
 import json
+import os
+import sys
 
-import requests
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 import config
+
+# Shared LLM dispatch
+_SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
+from llm import call_llm  # noqa: E402
 
 
 def load_vector_store() -> Chroma:
@@ -68,23 +75,15 @@ def generate_answer(question: str, context_items: list[dict]) -> str:
         "=== ANSWER ===\n"
     )
 
-    payload = {
-        "model": config.OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.2,
-            "num_predict": 512,
-        },
-    }
-
-    response = requests.post(
-        f"{config.OLLAMA_BASE_URL}/api/generate",
-        json=payload,
+    llm_result = call_llm(
+        prompt,
+        temperature=0.2,
+        max_tokens=512,
         timeout=120,
     )
-    response.raise_for_status()
-    return response.json().get("response", "").strip()
+    if llm_result.schema_errors:
+        print(f"[WARN] LLM backend issues: {llm_result.schema_errors}")
+    return llm_result.text.strip()
 
 
 def query(question: str, top_k: int = 5) -> dict:

@@ -13,11 +13,17 @@ Key features:
 """
 
 import json
+import os
 import re
-
-import requests
+import sys
 
 import config
+
+# Shared LLM dispatch
+_SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
+from llm import call_llm  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -203,23 +209,15 @@ def generate_query(
         else:
             prompt_with_correction = prompt
 
-        payload = {
-            "model": config.OLLAMA_MODEL,
-            "prompt": prompt_with_correction,
-            "stream": False,
-            "options": {
-                "temperature": config.TEMPERATURE,
-                "num_predict": config.MAX_TOKENS,
-            },
-        }
-
-        response = requests.post(
-            f"{config.OLLAMA_BASE_URL}/api/generate",
-            json=payload,
+        llm_result = call_llm(
+            prompt_with_correction,
+            temperature=config.TEMPERATURE,
+            max_tokens=config.MAX_TOKENS,
             timeout=120,
         )
-        response.raise_for_status()
-        raw_output = response.json().get("response", "")
+        raw_output = llm_result.text
+        if llm_result.schema_errors:
+            print(f"[WARN] LLM backend issues: {llm_result.schema_errors}")
 
         try:
             result = _extract_json(raw_output)

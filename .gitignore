@@ -168,3 +168,16 @@ webapp/backend/test_cookies.txt
 # Use projects/** (not projects/) so the !exception below can override the parent
 projects/**
 !projects/.gitkeep
+
+# -- Generated target-app output (written by pipeline at runtime) -------
+target-app/*.html
+target-app/*.css
+target-app/*.js
+target-app/*.py
+!target-app/app.py
+
+# -- RAG chroma store (agents/rag path) --------------------------------
+agents/rag/.chroma_store/
+
+# -- Eval benchmark output CSVs ----------------------------------------
+eval/results_*.csv

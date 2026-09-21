@@ -92,8 +92,8 @@ class GeneratedArtifact(BaseModel):
     language: str = Field(
         ..., description="Language of the generated code."
     )
-    framework: str = Field(
-        ..., description="Framework used in the generated code."
+    framework: str | None = Field(
+        default=None, description="Framework used in the generated code."
     )
     code: str = Field(
         ..., description="The generated source code."

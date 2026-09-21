@@ -7,13 +7,19 @@ the local Ollama model. Supports both online (live LLM) and offline
 """
 
 import json
+import os
 import re
+import sys
 import textwrap
-
-import requests
 
 import config
 from spec_schema import ArtifactSpec, GeneratedArtifact
+
+# Shared LLM dispatch
+_SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
+from llm import call_llm  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -134,25 +140,16 @@ def generate_artifact(spec: ArtifactSpec, max_retries: int = 2) -> GeneratedArti
         else:
             prompt_with_correction = prompt
 
-        payload = {
-            "model": config.OLLAMA_MODEL,
-            "prompt": prompt_with_correction,
-            "stream": False,
-            "keep_alive": config.OLLAMA_KEEP_ALIVE,
-            "options": {
-                "temperature": config.TEMPERATURE,
-                "num_predict": config.MAX_TOKENS,
-                "num_ctx": config.OLLAMA_CONTEXT_SIZE,
-            },
-        }
-
-        resp = requests.post(
-            f"{config.OLLAMA_BASE_URL}/api/generate",
-            json=payload,
-            timeout=180,
+        llm_result = call_llm(
+            prompt_with_correction,
+            temperature=config.TEMPERATURE,
+            max_tokens=config.MAX_TOKENS,
+            context_size=config.OLLAMA_CONTEXT_SIZE,
+            timeout=600,
         )
-        resp.raise_for_status()
-        raw_output = resp.json().get("response", "")
+        raw_output = llm_result.text
+        if llm_result.schema_errors:
+            print(f"[WARN] LLM backend issues: {llm_result.schema_errors}")
 
         try:
             result = _extract_json(raw_output)

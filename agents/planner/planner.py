@@ -10,11 +10,18 @@ parse it deterministically.
 """
 
 import json
+import os
 import re
-
-import requests
+import sys
 
 import config
+
+# Add shared module to path so call_llm is importable regardless of how the
+# agent is started (directly or from its own directory).
+_SHARED = os.path.join(os.path.dirname(__file__), "..", "shared")
+if _SHARED not in sys.path:
+    sys.path.insert(0, _SHARED)
+from llm import call_llm  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -250,27 +257,19 @@ def decompose(feature_request: str, max_retries: int = 2, file_manifest=None, st
         else:
             prompt_with_correction = prompt
 
-        payload = {
-            "model": config.OLLAMA_MODEL,
-            "prompt": prompt_with_correction,
-            "stream": False,
-            "keep_alive": config.OLLAMA_KEEP_ALIVE,
-            "options": {
-                "temperature": config.TEMPERATURE,
-                "num_predict": config.MAX_TOKENS,
-                "num_ctx": config.OLLAMA_CONTEXT_SIZE,
-            },
-        }
-
-        print(f"[INFO] Attempt {attempt + 1}: requesting plan from Ollama...")
-        response = requests.post(
-            f"{config.OLLAMA_BASE_URL}/api/generate",
-            json=payload,
+        provider = os.getenv("LLM_PROVIDER", "ollama")
+        print(f"[INFO] Attempt {attempt + 1}: requesting plan via {provider}...")
+        llm_result = call_llm(
+            prompt_with_correction,
+            temperature=config.TEMPERATURE,
+            max_tokens=config.MAX_TOKENS,
+            context_size=config.OLLAMA_CONTEXT_SIZE,
             timeout=300,
         )
-        response.raise_for_status()
-        raw_output = response.json().get("response", "")
-        print(f"[INFO] Received {len(raw_output)} chars from Ollama.")
+        raw_output = llm_result.text
+        if llm_result.schema_errors:
+            print(f"[WARN] LLM backend issues: {llm_result.schema_errors}")
+        print(f"[INFO] Received {len(raw_output)} chars from {llm_result.provider} in {llm_result.duration_ms}ms.")
 
         try:
             plan = _extract_json(raw_output)
