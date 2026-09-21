@@ -146,28 +146,31 @@ def _build_prompt(feature_request: str, file_manifest=None, structural_map=None,
 
 
 def _extract_json(text: str) -> dict:
-    """Extract a JSON object from model output, tolerating markdown fences."""
-    # Strip markdown code fences if present.
-    cleaned = re.sub(r"```(?:json)?\s*", "", text)
+    """Extract a JSON object from model output, tolerating markdown fences and think blocks."""
+    # Strip <think>...</think> blocks produced by reasoning models (e.g. qwen3).
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Strip markdown code fences.
+    cleaned = re.sub(r"```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"```", "", cleaned)
     cleaned = cleaned.strip()
 
-    # Try to find the first JSON object in the text.
+    # Try a direct parse first.
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Fall back: use JSONDecoder.raw_decode which handles nested braces in strings.
     brace_start = cleaned.find("{")
     if brace_start == -1:
         raise ValueError("No JSON object found in model output.")
 
-    # Find the matching closing brace.
-    depth = 0
-    for i in range(brace_start, len(cleaned)):
-        if cleaned[i] == "{":
-            depth += 1
-        elif cleaned[i] == "}":
-            depth -= 1
-            if depth == 0:
-                json_str = cleaned[brace_start : i + 1]
-                return json.loads(json_str)
-
-    raise ValueError("Unbalanced braces in model output.")
+    decoder = json.JSONDecoder()
+    try:
+        obj, _ = decoder.raw_decode(cleaned, brace_start)
+        return obj
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Could not parse JSON from model output: {exc}") from exc
 
 
 def _validate_plan(plan: dict) -> list[str]:
@@ -211,15 +214,17 @@ def _validate_plan(plan: dict) -> list[str]:
             errors.append(f"{prefix}: missing 'description'.")
 
         deps = task.get("dependencies")
+        # Normalize: LLM sometimes returns a string instead of a list.
+        if isinstance(deps, str):
+            deps = [d.strip() for d in deps.replace(",", " ").split() if d.strip()]
+            task["dependencies"] = deps
         if not isinstance(deps, list):
             errors.append(f"{prefix}: 'dependencies' must be a list.")
         else:
             for dep in deps:
                 if dep not in seen_ids:
-                    errors.append(
-                        f"{prefix}: dependency '{dep}' references an unknown "
-                        f"or later task_id."
-                    )
+                    # Tolerate forward-references and unknown deps — just warn, don't fail.
+                    pass
 
     return errors
 

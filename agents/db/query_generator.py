@@ -131,25 +131,31 @@ def _build_prompt(nl_request: str, schema: str) -> str:
 
 
 def _extract_json(text: str) -> dict:
-    """Extract a JSON object from model output, tolerating markdown fences."""
-    cleaned = re.sub(r"```(?:json)?\s*", "", text)
+    """Extract a JSON object from model output, tolerating markdown fences and think blocks."""
+    # Strip <think>...</think> blocks produced by reasoning models (e.g. qwen3).
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Strip markdown code fences.
+    cleaned = re.sub(r"```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"```", "", cleaned)
     cleaned = cleaned.strip()
 
+    # Try a direct parse first.
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Fall back: use JSONDecoder.raw_decode which handles nested braces in strings.
     brace_start = cleaned.find("{")
     if brace_start == -1:
         raise ValueError("No JSON object found in model output.")
 
-    depth = 0
-    for i in range(brace_start, len(cleaned)):
-        if cleaned[i] == "{":
-            depth += 1
-        elif cleaned[i] == "}":
-            depth -= 1
-            if depth == 0:
-                json_str = cleaned[brace_start : i + 1]
-                return json.loads(json_str)
-
-    raise ValueError("Unbalanced braces in model output.")
+    decoder = json.JSONDecoder()
+    try:
+        obj, _ = decoder.raw_decode(cleaned, brace_start)
+        return obj
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Could not parse JSON from model output: {exc}") from exc
 
 
 def _validate_response(response: dict) -> list[str]:

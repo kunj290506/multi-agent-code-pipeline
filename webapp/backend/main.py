@@ -178,6 +178,7 @@ def reset_project_history() -> None:
 
     # Keep only the target app server wrapper; generated files belong to the
     # previous login session and must not appear for the next user.
+    os.makedirs(TARGET_APP_DIR, exist_ok=True)
     for entry in os.listdir(TARGET_APP_DIR):
         if entry in {"app.py", "__pycache__"}:
             continue

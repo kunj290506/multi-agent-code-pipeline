@@ -243,10 +243,9 @@ export default function IDEPage() {
 
         {/* Center pane — code editor + terminal */}
         <div className="ide-pane-center" style={{ display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          {!activeRunId && (
+          {!activeRunId && !activeFile && (
             <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'var(--bg-pane)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', textAlign: 'center', padding: '2rem' }}>
-              <h2 style={{ color: 'var(--fg-default)', marginBottom: '1rem' }}>Workspace Ready</h2>
-              <p>Type a prompt on the right (e.g. "make a calculator") to generate a new app.</p>
+              <p style={{ fontSize: '1rem' }}>Type a prompt on the right (e.g. "make a calculator") to generate a new app.</p>
             </div>
           )}
           <div style={{ flex: 1, minHeight: 0 }}>

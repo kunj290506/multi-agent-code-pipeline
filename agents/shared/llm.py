@@ -17,10 +17,19 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Any
 
+try:
+    from dotenv import load_dotenv
+    # Search for .env from current dir up to 3 parent directories
+    load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+    load_dotenv()
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
-# Configuration — read from environment at import time
+# Configuration — read from environment
 # ---------------------------------------------------------------------------
 
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq").lower()
@@ -74,12 +83,13 @@ def call_groq(
     from groq import Groq  # lazy import — not needed for Ollama-only runs
 
     _model = model or GROQ_MODEL
-    if not GROQ_API_KEY:
+    api_key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
+    if not api_key:
         raise RuntimeError(
             "GROQ_API_KEY is not set. "
             "Export it in your environment before starting the services."
         )
-    client = Groq(api_key=GROQ_API_KEY, timeout=timeout)
+    client = Groq(api_key=api_key, timeout=timeout)
     t0 = time.monotonic()
     response = client.chat.completions.create(
         model=_model,
