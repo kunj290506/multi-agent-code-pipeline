@@ -11,6 +11,9 @@ import json
 import os
 import sys
 
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+
 import config
 
 # Shared LLM dispatch
@@ -19,30 +22,21 @@ if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
 from llm import call_llm  # noqa: E402
 
-# Lazy singleton — loaded on first query, not at import time (avoids blocking startup).
-_vector_store = None
 
-
-def load_vector_store():
-    """Load (and cache) the persisted ChromaDB collection."""
-    global _vector_store
-    if _vector_store is not None:
-        return _vector_store
-    from langchain_community.embeddings import HuggingFaceEmbeddings  # noqa: PLC0415
-    from langchain_community.vectorstores import Chroma  # noqa: PLC0415
+def load_vector_store() -> Chroma:
+    """Load the persisted ChromaDB collection."""
     embeddings = HuggingFaceEmbeddings(
         model_name=config.EMBEDDING_MODEL_NAME,
         model_kwargs={"device": "cpu"},
     )
-    _vector_store = Chroma(
+    return Chroma(
         persist_directory=config.CHROMA_PERSIST_DIR,
         embedding_function=embeddings,
         collection_name=config.CHROMA_COLLECTION_NAME,
     )
-    return _vector_store
 
 
-def retrieve_context(vector_store, question: str, top_k: int = 5) -> list[dict]:
+def retrieve_context(vector_store: Chroma, question: str, top_k: int = 5) -> list[dict]:
     """Return the top-k most relevant chunks for *question*.
 
     Each result is a dict with 'content' and 'metadata' keys.

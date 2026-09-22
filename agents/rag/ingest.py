@@ -9,6 +9,10 @@ local ChromaDB collection.
 import os
 from pathlib import Path
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+
 import config
 
 
@@ -62,7 +66,6 @@ def chunk_documents(
         A tuple of (texts, metadatas) suitable for direct insertion into
         a vector store.
     """
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -91,14 +94,12 @@ def build_vector_store(
     metadatas: list[dict],
     persist_directory: str = config.CHROMA_PERSIST_DIR,
     collection_name: str = config.CHROMA_COLLECTION_NAME,
-):
+) -> Chroma:
     """Create (or overwrite) a ChromaDB collection from the given chunks.
 
     The collection is persisted to disk so it can be loaded later without
     re-ingesting.
     """
-    from langchain_community.embeddings import HuggingFaceEmbeddings
-    from langchain_community.vectorstores import Chroma
     embeddings = HuggingFaceEmbeddings(
         model_name=config.EMBEDDING_MODEL_NAME,
         model_kwargs={"device": "cpu"},
@@ -118,7 +119,7 @@ def build_vector_store(
     return vector_store
 
 
-def ingest(source_dir: str | None = None):
+def ingest(source_dir: str | None = None) -> Chroma:
     """End-to-end ingestion: collect -> chunk -> embed -> store.
 
     Args:
@@ -136,8 +137,6 @@ def ingest(source_dir: str | None = None):
     if not documents:
         print("[WARN] No documents found. The vector store will be empty.")
         # Still create an empty store so downstream code does not break.
-        from langchain_community.embeddings import HuggingFaceEmbeddings
-        from langchain_community.vectorstores import Chroma
         embeddings = HuggingFaceEmbeddings(
             model_name=config.EMBEDDING_MODEL_NAME,
             model_kwargs={"device": "cpu"},

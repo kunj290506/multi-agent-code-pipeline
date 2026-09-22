@@ -77,84 +77,26 @@ def _build_prompt(spec: ArtifactSpec) -> str:
 
 
 def _extract_json(text: str) -> dict:
-    """Extract a JSON object from model output, tolerating markdown fences and think blocks.
-
-    Handles three common failure modes from reasoning LLMs:
-    1. <think>...</think> preamble before the JSON.
-    2. Markdown code fences wrapping the JSON.
-    3. Unescaped newlines/quotes inside string fields (unterminated string errors)
-       — in this case we extract the 'code' block separately and re-assemble.
-    """
-    # Strip <think>...</think> blocks produced by reasoning models (e.g. qwen3).
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    # Strip markdown code fences (```json ... ``` or ``` ... ```).
-    cleaned = re.sub(r"```(?:json)?\s*", "", cleaned)
-    cleaned = re.sub(r"```", "", cleaned)
+    """Extract a JSON object from model output, tolerating markdown fences."""
+    # Strip markdown code fences if present.
+    cleaned = re.sub(r"```(?:json)?\s*", "", text)
     cleaned = cleaned.strip()
 
-    # Try a direct parse first (model output is clean JSON).
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    # Try raw_decode from the first '{' (handles trailing garbage after valid JSON).
     brace_start = cleaned.find("{")
     if brace_start == -1:
         raise ValueError("No JSON object found in model output.")
 
-    decoder = json.JSONDecoder()
-    try:
-        obj, _ = decoder.raw_decode(cleaned, brace_start)
-        return obj
-    except json.JSONDecodeError:
-        pass
+    depth = 0
+    for i in range(brace_start, len(cleaned)):
+        if cleaned[i] == "{":
+            depth += 1
+        elif cleaned[i] == "}":
+            depth -= 1
+            if depth == 0:
+                json_str = cleaned[brace_start : i + 1]
+                return json.loads(json_str)
 
-    # Last resort: the "code" field contains raw newlines/unescaped characters that
-    # break the JSON parser.  Extract every field individually using regex and
-    # reconstruct a clean dict — this is resilient to unterminated-string errors.
-    result: dict = {}
-
-    # Extract simple quoted string fields (single-line values).
-    for field in ("artifact_type", "name", "language", "framework", "filename", "explanation"):
-        m = re.search(
-            rf'"{field}"\s*:\s*"((?:[^"\\]|\\.)*)"',
-            cleaned,
-        )
-        if m:
-            result[field] = m.group(1).encode("raw_unicode_escape").decode("unicode_escape", errors="replace")
-
-    # Extract the "code" field: everything between the first "code": " and the
-    # closing sequence that ends the JSON string (look for the last field or closing brace).
-    # Strategy: grab everything after `"code":` up to the next top-level `"` key or `}`.
-    code_match = re.search(r'"code"\s*:\s*"(.*?)(?<!\\)"\s*(?:,\s*"|\s*\})', cleaned, re.DOTALL)
-    if code_match:
-        raw_code = code_match.group(1)
-        # Unescape JSON escape sequences.
-        try:
-            result["code"] = json.loads(f'"{raw_code}"')
-        except Exception:
-            result["code"] = raw_code
-    else:
-        # Broadest fallback: everything after "code": until end of string block.
-        code_match2 = re.search(r'"code"\s*:\s*"(.*)', cleaned, re.DOTALL)
-        if code_match2:
-            raw = code_match2.group(1).rstrip().rstrip('"').rstrip(",").rstrip("}")
-            result["code"] = raw
-
-    # Extract list fields (dependencies, warnings).
-    for field in ("dependencies", "warnings"):
-        m = re.search(rf'"{field}"\s*:\s*(\[.*?\])', cleaned, re.DOTALL)
-        if m:
-            try:
-                result[field] = json.loads(m.group(1))
-            except Exception:
-                result[field] = []
-
-    if not result:
-        raise ValueError(f"Could not parse JSON from model output. Raw snippet: {cleaned[:300]}")
-
-    return result
+    raise ValueError("Unbalanced braces in model output.")
 
 
 def _validate_response(response: dict) -> list[str]:
