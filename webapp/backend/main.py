@@ -97,6 +97,8 @@ AGENT_URLS: dict[str, str] = {
     "reviewer-agent": "http://localhost:8015/review",
 }
 
+AGENT_HTTP_CLIENT = httpx.AsyncClient(timeout=600)
+
 # ---------------------------------------------------------------------------
 # Application
 # ---------------------------------------------------------------------------
@@ -208,6 +210,11 @@ auth.set_login_hook(reset_project_history)
 def _startup() -> None:
     """Initialise the auth users DB on server startup."""
     auth.init_db()
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    await AGENT_HTTP_CLIENT.aclose()
 
 # ---------------------------------------------------------------------------
 # In-memory stores
@@ -465,8 +472,7 @@ async def call_agent(agent_name: str, payload: dict) -> dict:
     # Planner can take >300s on a complex prompt on constrained hardware.
     # CodeGen with a long context can also exceed 180s. Use 600s across the board.
     try:
-        async with httpx.AsyncClient(timeout=600) as client:
-            response = await client.post(url, json=payload)
+        response = await AGENT_HTTP_CLIENT.post(url, json=payload)
     except httpx.ConnectError as exc:
         raise RuntimeError(
             f"Agent '{agent_name}' is not reachable at {url} — "
@@ -863,6 +869,21 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
         logger.info("Run %s auto-approving plan with %d subtasks", request_id, len(subtasks))
     state["plan"] = None  # Clear plan from live state after approval.
     context_str = ""
+    
+    if skip_clear and os.path.exists(workspace):
+        context_str += "Current Workspace Files:\n"
+        for root, _, fnames in os.walk(workspace):
+            if "__pycache__" in root or ".git" in root: continue
+            for f in fnames:
+                filepath = os.path.join(root, f)
+                rel_path = os.path.relpath(filepath, workspace)
+                try:
+                    with open(filepath, "r", encoding="utf-8") as fh:
+                        content = fh.read()
+                    context_str += f"\n--- {rel_path} ---\n{content}\n"
+                except Exception:
+                    pass
+
     last_codegen_artifact: dict | None = None
     # workspace already resolved above (step 0)
 
@@ -1647,6 +1668,9 @@ async def run_project(
                 logger.info("Auto-generated missing index.html for static project.")
 
             # Serve with Python http.server — cross-platform, no npm required.
+            favicon_path = os.path.join(workspace_dir, "favicon.ico")
+            if not os.path.exists(favicon_path):
+                open(favicon_path, "wb").close()
             cmd = [sys.executable, "-m", "http.server", str(port)]
             process = subprocess.Popen(
                 cmd,

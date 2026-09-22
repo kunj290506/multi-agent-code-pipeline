@@ -77,6 +77,7 @@ def generate_answer(question: str, context_items: list[dict]) -> str:
 
     llm_result = call_llm(
         prompt,
+        model=config.GROQ_MODEL if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq" else None,
         temperature=0.2,
         max_tokens=512,
         timeout=120,

@@ -55,6 +55,8 @@ def _infer_spec_from_description(
         ".yml": ("configuration", "yaml", "none"),
         ".sql": ("database_migration", "sql", "none"),
         ".md": ("documentation", "markdown", "none"),
+        ".html": ("html_page", "html", "none"),
+        ".css": ("stylesheet", "css", "none"),
     }
     for extension, (artifact_type, language, framework) in filename_types.items():
         if filename_lower.endswith(extension):
@@ -71,47 +73,52 @@ def _infer_spec_from_description(
     if ".html" in desc_lower or ("html" in desc_lower and "index" in desc_lower):
         return {
             "artifact_type": "html_page",
-            "name": "GeneratedPage",
+            "name": target_filename.rsplit(".", 1)[0] if target_filename else "index",
             "description": description,
             "language": "html",
             "framework": "none",
             "context": context,
+            "target_filename": target_filename,
         }
     if ".css" in desc_lower or ("style" in desc_lower and "css" in desc_lower):
         return {
             "artifact_type": "stylesheet",
-            "name": "GeneratedStylesheet",
+            "name": target_filename.rsplit(".", 1)[0] if target_filename else "style",
             "description": description,
             "language": "css",
             "framework": "none",
             "context": context,
+            "target_filename": target_filename,
         }
     if ".js" in desc_lower or ("javascript" in desc_lower) or ("script" in desc_lower and "js" in desc_lower):
         return {
             "artifact_type": "script",
-            "name": "GeneratedScript",
+            "name": target_filename.rsplit(".", 1)[0] if target_filename else "script",
             "description": description,
             "language": "javascript",
             "framework": "none",
             "context": context,
+            "target_filename": target_filename,
         }
     if ".md" in desc_lower or "readme" in desc_lower or "markdown" in desc_lower:
         return {
             "artifact_type": "documentation",
-            "name": "README",
+            "name": target_filename.rsplit(".", 1)[0] if target_filename else "README",
             "description": description,
             "language": "markdown",
             "framework": "none",
             "context": context,
+            "target_filename": target_filename,
         }
     if ".sql" in desc_lower or "migration" in desc_lower or "database" in desc_lower:
         return {
             "artifact_type": "database_migration",
-            "name": "GeneratedMigration",
+            "name": target_filename.rsplit(".", 1)[0] if target_filename else "migration",
             "description": description,
             "language": "sql",
             "framework": "none",
             "context": context,
+            "target_filename": target_filename,
         }
     # Default: generic Python artifact
     return {

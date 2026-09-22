@@ -32,7 +32,7 @@ except ImportError:
 # Configuration — read from environment
 # ---------------------------------------------------------------------------
 
-LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq").lower()
+LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama").lower()
 
 GROQ_API_KEY: str  = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL: str    = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
@@ -82,6 +82,7 @@ def call_groq(
     timeout: int = 120,
 ) -> LLMResult:
     """Send a prompt to the Groq chat-completions API."""
+    max_tokens = min(max_tokens, 950)
     global _groq_client
     if _groq_client is None:
         from groq import Groq  # lazy import — not needed for Ollama-only runs

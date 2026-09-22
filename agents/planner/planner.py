@@ -104,9 +104,10 @@ Rules:
 5. If the request implies a full project rebuild or replacement (e.g., "delete this whole project"),
    the FIRST subtask MUST be a cleanup step assigned to the "system" agent.
 6. WHOLE-PROJECT REQUESTS (e.g. "build a calculator app", "create a todo app"):
-   - Create ONE codegen-agent subtask per output file (e.g. index.html, style.css, app.js, README.md).
+    - Create ONE codegen-agent subtask per required runtime output file (e.g. index.html, style.css, app.js).
    - Each codegen subtask MUST include a "target_filename" field with the exact filename to write.
    - Do NOT create a single codegen subtask for the whole project — one subtask per file only.
+    - Do not add README.md or other documentation files unless the request explicitly asks for them.
    - Omit rag-agent unless existing codebase files are available to index.
    - Omit db-agent unless the app genuinely needs a database.
 7. SINGLE-FEATURE REQUESTS (adding to an existing project): use rag-agent first if helpful,
@@ -143,6 +144,15 @@ def _build_prompt(feature_request: str, file_manifest=None, structural_map=None,
         
     prompt += "Respond with the JSON plan:"
     return prompt
+
+
+def _is_whole_project_request(feature_request: str) -> bool:
+    """Identify requests that benefit from the faster whole-project planner model."""
+    request = feature_request.lower()
+    return any(
+        marker in request
+        for marker in ("web app", "web application", "whole project", "full project")
+    )
 
 
 def _extract_json(text: str) -> dict:
@@ -259,8 +269,12 @@ def decompose(feature_request: str, max_retries: int = 2, file_manifest=None, st
 
         provider = os.getenv("LLM_PROVIDER", "ollama")
         print(f"[INFO] Attempt {attempt + 1}: requesting plan via {provider}...")
+        planner_model = config.GROQ_MODEL
+        if _is_whole_project_request(feature_request):
+            planner_model = config.GROQ_WHOLE_PROJECT_MODEL
         llm_result = call_llm(
             prompt_with_correction,
+            model=planner_model if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq" else None,
             temperature=config.TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             context_size=config.OLLAMA_CONTEXT_SIZE,

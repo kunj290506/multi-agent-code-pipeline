@@ -211,6 +211,7 @@ def generate_query(
 
         llm_result = call_llm(
             prompt_with_correction,
+            model=config.GROQ_MODEL if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq" else None,
             temperature=config.TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             timeout=120,

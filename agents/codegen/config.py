@@ -11,6 +11,9 @@ import os
 # ---------------------------------------------------------------------------
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct-q4_K_M")
+GROQ_MODEL: str = os.getenv(
+	"CODEGEN_GROQ_MODEL", os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+)
 
 # ---------------------------------------------------------------------------
 # LLM generation parameters

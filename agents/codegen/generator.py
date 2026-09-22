@@ -142,6 +142,7 @@ def generate_artifact(spec: ArtifactSpec, max_retries: int = 2) -> GeneratedArti
 
         llm_result = call_llm(
             prompt_with_correction,
+            model=config.GROQ_MODEL if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq" else None,
             temperature=config.TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             context_size=config.OLLAMA_CONTEXT_SIZE,
