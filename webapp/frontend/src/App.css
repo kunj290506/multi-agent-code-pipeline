@@ -1239,6 +1239,11 @@
   gap: 8px;
 }
 
+.chat-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
 .chat-textarea {
   background: var(--surface-card);
   border: 1px solid var(--hairline);
@@ -1246,7 +1251,7 @@
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 300;
-  padding: 10px 12px;
+  padding: 10px 44px 10px 12px;
   resize: vertical;
   outline: none;
   width: 100%;
@@ -1258,6 +1263,42 @@
 
 .chat-textarea:focus {
   border-color: var(--accent-blue-dark);
+}
+
+.chat-action-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--accent-blue-dark);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.chat-action-btn:disabled {
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.chat-action-btn:not(:disabled):hover {
+  background: var(--accent-blue-light);
+}
+
+.chat-stop-btn {
+  background: var(--accent-red);
+}
+
+.chat-stop-btn:not(:disabled):hover {
+  background: #ff4b3e;
 }
 
 .chat-textarea::placeholder {
@@ -1617,3 +1658,26 @@
   overflow: auto;
   margin-top: 4px;
 }
+
+
+/* ===== INTERACTIVE UPGRADES ===== */
+@keyframes pulse-node {
+  0% { filter: drop-shadow(0 0 4px rgba(28, 105, 212, 0.4)); transform: scale(1); }
+  50% { filter: drop-shadow(0 0 12px rgba(28, 105, 212, 0.8)); transform: scale(1.02); }
+  100% { filter: drop-shadow(0 0 4px rgba(28, 105, 212, 0.4)); transform: scale(1); }
+}
+
+.diagram-node-active {
+  animation: pulse-node 2s infinite ease-in-out;
+  transform-origin: center;
+}
+
+@keyframes step-card-enter-anim {
+  from { opacity: 0; transform: translateY(15px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.step-card-enter {
+  animation: step-card-enter-anim 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+

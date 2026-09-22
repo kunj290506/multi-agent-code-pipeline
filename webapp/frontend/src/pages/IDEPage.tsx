@@ -281,17 +281,7 @@ export default function IDEPage() {
         </div>
       </div>
 
-      {/* STOP button — fixed bottom-right while running or awaiting approval */}
-      {showStopButton && (
-        <button
-          className="stop-btn"
-          onClick={handleStop}
-          disabled={stopping}
-          aria-label="Stop pipeline run"
-        >
-          {stopping ? 'Stopping…' : 'Stop'}
-        </button>
-      )}
+      {/* STOP button moved to ChatPanel */}
     </div>
   )
 }

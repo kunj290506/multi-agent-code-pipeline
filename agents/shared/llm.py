@@ -71,32 +71,51 @@ class LLMResult:
 # Groq backend (default)
 # ---------------------------------------------------------------------------
 
+_groq_client = None
+
 def call_groq(
     prompt: str,
     *,
     model: str | None = None,
     temperature: float = 0.1,
-    max_tokens: int = 1024,
+    max_tokens: int = 8000,
     timeout: int = 120,
 ) -> LLMResult:
     """Send a prompt to the Groq chat-completions API."""
-    from groq import Groq  # lazy import — not needed for Ollama-only runs
+    global _groq_client
+    if _groq_client is None:
+        from groq import Groq  # lazy import — not needed for Ollama-only runs
+        if not GROQ_API_KEY:
+            raise RuntimeError(
+                "GROQ_API_KEY is not set. "
+                "Export it in your environment before starting the services."
+            )
+        _groq_client = Groq(api_key=GROQ_API_KEY, timeout=timeout)
 
+    # Use a faster default model if the placeholder is still used
     _model = model or GROQ_MODEL
-    api_key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
-    if not api_key:
-        raise RuntimeError(
-            "GROQ_API_KEY is not set. "
-            "Export it in your environment before starting the services."
-        )
-    client = Groq(api_key=api_key, timeout=timeout)
+
+    from groq import RateLimitError, InternalServerError
     t0 = time.monotonic()
-    response = client.chat.completions.create(
-        model=_model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = _groq_client.chat.completions.create(
+                model=_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            break
+        except (RateLimitError, InternalServerError) as e:
+            if attempt == max_retries - 1:
+                raise
+            # Exponential backoff: 2s, 4s, 8s, 16s...
+            sleep_time = 2 ** attempt * 2
+            print(f"[WARN] Groq rate limit/server error on attempt {attempt+1}. Retrying in {sleep_time}s... Error: {e}")
+            time.sleep(sleep_time)
+
     duration_ms = int((time.monotonic() - t0) * 1000)
     text = response.choices[0].message.content or ""
     return LLMResult(text=text, provider="groq", model=_model, duration_ms=duration_ms)
@@ -111,7 +130,7 @@ def call_ollama(
     *,
     model: str | None = None,
     temperature: float = 0.1,
-    max_tokens: int = 1024,
+    max_tokens: int = 800,
     context_size: int | None = None,
     timeout: int = 600,
 ) -> LLMResult:
@@ -152,7 +171,7 @@ def call_llm(
     provider: str | None = None,
     model: str | None = None,
     temperature: float = 0.1,
-    max_tokens: int = 1024,
+    max_tokens: int = 8000,
     context_size: int | None = None,
     timeout: int = 600,
 ) -> LLMResult:

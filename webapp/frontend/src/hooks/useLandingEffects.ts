@@ -26,13 +26,13 @@ export function useCardTilt() {
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
         
-        const rotateX = ((y - centerY) / centerY) * -5; // max 5 degrees
-        const rotateY = ((x - centerX) / centerX) * 5;
+        const rotateX = ((y - centerY) / centerY) * -15; // max 15 degrees
+        const rotateY = ((x - centerX) / centerX) * 15;
         
         el.style.setProperty('--mouseX', `${(x / rect.width) * 100}%`);
         el.style.setProperty('--mouseY', `${(y / rect.height) * 100}%`);
         
-        el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
+        el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.05, 1.05, 1.05)`;
         el.style.transition = 'none';
       };
       

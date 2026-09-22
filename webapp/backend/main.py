@@ -798,10 +798,16 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
     await broadcast({"type": "log", "agent": "Planner", "message": "Planning tasks...", "request_id": request_id})
     try:
         t0 = time.monotonic()
-        plan = await call_agent(
-            "planner-agent",
-            {"feature_request": feature_request, "offline": PIPELINE_OFFLINE},
-        )
+        planner_payload = {"feature_request": feature_request, "offline": PIPELINE_OFFLINE}
+        if skip_clear and os.path.exists(workspace):
+            files = []
+            for root, _, fnames in os.walk(workspace):
+                if "__pycache__" in root or ".git" in root: continue
+                for f in fnames:
+                    files.append(os.path.relpath(os.path.join(root, f), workspace))
+            planner_payload["file_manifest"] = files
+
+        plan = await call_agent("planner-agent", planner_payload)
         dur = int((time.monotonic() - t0) * 1000)
         if "subtasks" not in plan:
             raise ValueError(
@@ -861,17 +867,31 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
     # workspace already resolved above (step 0)
 
     # -- Step 2: Execute subtasks ----------------------------------------------
-    for task in subtasks:
+    task_events = {task["task_id"]: asyncio.Event() for task in subtasks}
+    run_context = {"context_str": context_str, "last_codegen_artifact": last_codegen_artifact}
+    cancel_handled = False
+
+    async def process_task(task):
+        nonlocal cancel_handled
+        
+        # Wait for dependencies
+        for dep in task.get("dependencies", []):
+            if dep in task_events:
+                await task_events[dep].wait()
+
         # Check for cancellation before dispatching each agent.
         if await _is_cancelled():
-            logger.info("Run %s cancelled before agent %s", request_id, task["agent"])
-            cancel_step = _step_record(
-                task["agent"], "cancelled",
-                input_summary=task.get("description", "")[:200],
-                output_summary="Cancelled before dispatch.",
-            )
-            await _push_step(request_id, cancel_step)
-            await _finalize_run(request_id, "cancelled")
+            if not cancel_handled:
+                cancel_handled = True
+                logger.info("Run %s cancelled before agent %s", request_id, task["agent"])
+                cancel_step = _step_record(
+                    task["agent"], "cancelled",
+                    input_summary=task.get("description", "")[:200],
+                    output_summary="Cancelled before dispatch.",
+                )
+                await _push_step(request_id, cancel_step)
+                await _finalize_run(request_id, "cancelled")
+            task_events[task["task_id"]].set()
             return
 
         agent = task["agent"]
@@ -892,7 +912,7 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                     raise ValueError(
                         f"RAG agent returned invalid output: missing 'answer' key. Got: {list(res.keys())}"
                     )
-                context_str += f"\nRAG Context: {res.get('answer', '')}"
+                run_context["context_str"] += f"\nRAG Context: {res.get('answer', '')}"
                 confidence = res.get("confidence", 0.0)
                 low_conf = res.get("low_confidence", True)
                 summary = (
@@ -933,8 +953,12 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                 if query:
                     # Cancel check before the executor call too.
                     if await _is_cancelled():
-                        await _finalize_run(request_id, "cancelled")
+                        if not cancel_handled:
+                            cancel_handled = True
+                            await _finalize_run(request_id, "cancelled")
+                        task_events[task["task_id"]].set()
                         return
+                        
                     await broadcast({"type": "log", "agent": "DB Executor", "message": f"Executing query: {query}"})
                     t0 = time.monotonic()
                     exec_res = await call_agent("db-executor", {"query": query, "parameters": params})
@@ -952,13 +976,13 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
             elif agent == "codegen-agent":
                 codegen_res, review_res = await _run_codegen_with_review(
                     desc,
-                    context_str,
+                    run_context["context_str"],
                     request_id,
                     target_filename=task.get("target_filename"),
                 )
                 final_verdict = review_res.get("final_verdict", "unknown")
                 artifact = codegen_res.get("artifact", {})
-                last_codegen_artifact = artifact
+                run_context["last_codegen_artifact"] = artifact
                 # Resolve filename: task target_filename takes precedence.
                 filename = _resolve_filename(artifact, desc, task=task)
                 code = artifact.get("code")
@@ -1003,8 +1027,8 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                     })
 
             elif agent == "reviewer-agent":
-                if last_codegen_artifact:
-                    req_payload = {"artifact": last_codegen_artifact}
+                if run_context["last_codegen_artifact"]:
+                    req_payload = {"artifact": run_context["last_codegen_artifact"]}
                 else:
                     req_payload = {"code": "# No code generated", "language": "python"}
                 t0 = time.monotonic()
@@ -1034,8 +1058,15 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                 "type": "log", "agent": agent,
                 "message": f"Failed: {exc}", "status": "error",
             })
+            
+        finally:
+            task_events[task["task_id"]].set()
 
-    await _finalize_run(request_id, "success")
+    if subtasks:
+        await asyncio.gather(*(process_task(t) for t in subtasks))
+
+    if not await _is_cancelled() and not cancel_handled:
+        await _finalize_run(request_id, "success")
 
 
 # ---------------------------------------------------------------------------
@@ -1530,13 +1561,19 @@ def _detect_project_type(workspace_dir: str) -> dict:
             "cwd": workspace_dir,
         }
 
+    if files:
+        return {
+            "runnable": True,
+            "type": "static",
+            "reason": None,
+            "command": None,
+            "cwd": workspace_dir,
+        }
+
     return {
         "runnable": False,
         "type": "unknown",
-        "reason": (
-            f"Could not detect project type. Files found: {sorted(files) or 'none'}. "
-            "Expected index.html (static), package.json (node), or app.py/main.py (python)."
-        ),
+        "reason": "Workspace is empty.",
         "command": None,
         "cwd": workspace_dir,
     }
@@ -1592,6 +1629,23 @@ async def run_project(
 
     try:
         if project_type == "static":
+            if not os.path.exists(os.path.join(workspace_dir, "index.html")):
+                # Auto-generate a fallback index.html that includes local CSS and JS files
+                css_files = [f for f in os.listdir(workspace_dir) if f.endswith(".css")]
+                js_files = [f for f in os.listdir(workspace_dir) if f.endswith(".js")]
+                html_content = ["<!DOCTYPE html><html><head><title>Generated App</title>"]
+                for css in css_files:
+                    html_content.append(f'<link rel="stylesheet" href="{css}">')
+                html_content.append("</head><body>")
+                html_content.append('<div id="root"></div>')
+                for js in js_files:
+                    html_content.append(f'<script src="{js}"></script>')
+                html_content.append("</body></html>")
+                
+                with open(os.path.join(workspace_dir, "index.html"), "w", encoding="utf-8") as f:
+                    f.write("\n".join(html_content))
+                logger.info("Auto-generated missing index.html for static project.")
+
             # Serve with Python http.server — cross-platform, no npm required.
             cmd = [sys.executable, "-m", "http.server", str(port)]
             process = subprocess.Popen(
@@ -1604,7 +1658,18 @@ async def run_project(
             )
         else:
             # Node or Python project — shell=True required on Windows for npm
+            if project_type == "node" and not os.path.exists(os.path.join(workspace_dir, "node_modules")):
+                logger.info("Installing npm dependencies in %s", workspace_dir)
+                subprocess.run(["npm", "install"], cwd=workspace_dir, shell=sys.platform == "win32")
+            elif project_type == "python" and "requirements.txt" in os.listdir(workspace_dir):
+                logger.info("Installing python dependencies in %s", workspace_dir)
+                subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], cwd=workspace_dir)
+
             cmd = detection["command"]
+            if project_type == "node" and cmd and len(cmd) > 2 and cmd[0] == "npm" and cmd[1] == "run":
+                # Vite ignores PORT env var, pass it explicitly if possible
+                cmd.extend(["--", "--port", str(port)])
+
             use_shell = sys.platform == "win32" and project_type == "node"
             process = subprocess.Popen(
                 cmd if not use_shell else " ".join(cmd),

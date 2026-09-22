@@ -62,7 +62,7 @@ YELLOW = "\033[93m"
 RESET  = "\033[0m"
 
 # How long to wait for each service to pass its health check.
-HEALTH_TIMEOUT_S: int  = int(os.getenv("LAUNCH_HEALTH_TIMEOUT", "60"))
+HEALTH_TIMEOUT_S: int  = int(os.getenv("LAUNCH_HEALTH_TIMEOUT", "180"))
 # Seconds between health-poll retries.
 HEALTH_POLL_INTERVAL_S: float = 1.0
 

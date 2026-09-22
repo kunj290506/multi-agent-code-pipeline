@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, Suspense } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { Link } from 'react-router-dom'
 
 import SmoothScroll from '../components/SmoothScroll'
-import InteractiveCursor from '../components/InteractiveCursor'
 import NoiseOverlay from '../components/NoiseOverlay'
 import Navigation from '../components/Navigation'
 import SplitText from '../components/SplitText'
@@ -59,7 +59,6 @@ export default function LandingPage() {
       <div className="landing-page">
         <CodeBackground />
         <NoiseOverlay />
-        <InteractiveCursor />
         <Navigation />
         
         <style>{`
@@ -143,6 +142,7 @@ export default function LandingPage() {
             scroll-snap-type: x mandatory;
             scrollbar-width: thin;
             scrollbar-color: #3c3c3c transparent;
+            perspective: 1200px;
           }
           
           .agents-horizontal-wrapper::-webkit-scrollbar {
@@ -272,6 +272,35 @@ export default function LandingPage() {
             will-change: opacity, transform;
           }
 
+          .tech-marquee-wrapper {
+            width: 100%;
+            overflow: hidden;
+            white-space: nowrap;
+            position: relative;
+            mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+            -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+          }
+          
+          .tech-marquee {
+            display: inline-flex;
+            gap: 64px;
+            animation: marquee 20s linear infinite;
+          }
+          
+          .tech-marquee span {
+            font-size: 8vw;
+            font-weight: 700;
+            color: transparent;
+            -webkit-text-stroke: 1px rgba(255, 255, 255, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+          }
+          
+          @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+          
           @media (max-width: 768px) {
             .section { flex-direction: column; padding: 120px 24px; }
             .section-left, .section-right { flex: 0 0 100%; width: 100%; }
@@ -279,7 +308,7 @@ export default function LandingPage() {
             .agents-horizontal-wrapper { padding: 0 24px 24px 24px; }
             .agent-card { width: 85vw; height: auto; min-height: 300px; }
             .constraints-list { grid-template-columns: 1fr; }
-            .tech-marquee { font-size: 12vw; }
+            .tech-marquee span { font-size: 12vw; }
           }
         `}</style>
 
@@ -289,14 +318,27 @@ export default function LandingPage() {
               <HeroShaderBackground />
             </Suspense>
             
-            <div ref={heroTextRef} style={{ position: 'relative', zIndex: 10, width: '100%' }}>
+            <div ref={heroTextRef} style={{ position: 'relative', zIndex: 10, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <h1>
                 <SplitText>Multi-Agent Code</SplitText><br />
                 <SplitText>Pipeline Orchestrator</SplitText>
               </h1>
-              <p style={{ margin: '0 auto', fontSize: 'max(1.5vw, 18px)' }}>
+              <p style={{ margin: '0 auto 40px auto', fontSize: 'max(1.5vw, 18px)' }}>
                 <SplitText>A multi-agent pipeline that takes a natural-language request and produces real, reviewed code using five strictly coordinated AI agents.</SplitText>
               </p>
+              <Link to="/ide" style={{
+                display: 'inline-block',
+                padding: '16px 40px',
+                background: 'var(--text-white)',
+                color: 'var(--canvas)',
+                textDecoration: 'none',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '2px',
+                transition: 'transform 0.3s ease'
+              }} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
+                Get Started
+              </Link>
             </div>
           </section>
 

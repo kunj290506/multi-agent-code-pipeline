@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RunState, Step, Subtask } from '../types'
+import Magnetic from './Magnetic'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -92,7 +93,7 @@ function PipelineDiagram({ activeAgent }: { activeAgent: string | null }) {
         const isActive = activeAgent === n.id
         const accentH = 4
         return (
-          <g key={n.id}>
+          <g key={n.id} className={isActive ? 'diagram-node-active' : ''}>
             {/* Card background */}
             <rect
               x={x} y={y}
@@ -240,20 +241,24 @@ function PlanApproval({
 
       {/* Action buttons */}
       <div className="plan-actions">
-        <button
-          className="btn-primary plan-run-btn"
-          onClick={handleApprove}
-          disabled={subtasks.length === 0 || approving || hasBlocked}
-        >
-          {approving ? 'APPROVING…' : hasBlocked ? 'BLOCKED' : 'RUN PLAN'}
-        </button>
-        <button
-          className="plan-cancel-btn"
-          onClick={onCancel}
-          disabled={approving}
-        >
-          CANCEL
-        </button>
+        <Magnetic>
+          <button
+            className="btn-primary plan-run-btn"
+            onClick={handleApprove}
+            disabled={subtasks.length === 0 || approving || hasBlocked}
+          >
+            {approving ? 'APPROVING…' : hasBlocked ? 'BLOCKED' : 'RUN PLAN'}
+          </button>
+        </Magnetic>
+        <Magnetic>
+          <button
+            className="plan-cancel-btn"
+            onClick={onCancel}
+            disabled={approving}
+          >
+            CANCEL
+          </button>
+        </Magnetic>
       </div>
     </div>
   )
@@ -364,7 +369,7 @@ function StepCard({ step, isRetry }: { step: Step; isRetry: boolean }) {
     : null
 
   return (
-    <div className={`step-card ${isRetry ? 'step-retry' : ''}`} data-status={step.status}>
+    <div className={`step-card step-card-enter ${isRetry ? 'step-retry' : ''}`} data-status={step.status}>
       {isRetry && <div className="retry-label">RETRY — ATTEMPT {step.attempt_number}</div>}
       <div className="step-header" onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer' }}>
         <div className="step-meta">
@@ -511,14 +516,45 @@ export default function ChatPanel({ runState, isRunning, onSubmit, onApprove, on
 
       {/* Prompt form */}
       <form className="chat-form" onSubmit={handleSubmit}>
-        <textarea
-          className="chat-textarea"
-          placeholder="Describe what to build…"
-          rows={3}
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          disabled={inputDisabled}
-        />
+        <div className="chat-input-wrapper">
+          <textarea
+            className="chat-textarea"
+            placeholder="Describe what to build…"
+            rows={3}
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSubmit(e as unknown as React.FormEvent)
+              }
+            }}
+            disabled={inputDisabled}
+          />
+          {inputDisabled ? (
+            <button
+              type="button"
+              className="chat-action-btn chat-stop-btn"
+              onClick={onCancel}
+              aria-label="Stop"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="chat-action-btn chat-send-btn"
+              disabled={!prompt.trim()}
+              aria-label="Run Pipeline"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+            </button>
+          )}
+        </div>
         <input
           className="chat-project-input"
           type="text"
@@ -527,13 +563,6 @@ export default function ChatPanel({ runState, isRunning, onSubmit, onApprove, on
           onChange={e => setProjectName(e.target.value)}
           disabled={inputDisabled}
         />
-        <button
-          className="btn-primary"
-          type="submit"
-          disabled={!prompt.trim() || inputDisabled}
-        >
-          RUN PIPELINE
-        </button>
         {runState && (
           <div className="chat-run-status">
             <span className={`run-status-badge status-${runState.status}`}>

@@ -27,7 +27,7 @@ VALID_AGENTS: list[str] = [
 # LLM generation parameters
 # ---------------------------------------------------------------------------
 TEMPERATURE: float = float(os.getenv("PLANNER_TEMPERATURE", "0.1"))
-MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "1024"))
+MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "800"))
 OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 OLLAMA_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "2048"))
 
