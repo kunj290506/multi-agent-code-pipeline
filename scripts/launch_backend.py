@@ -198,7 +198,7 @@ def start_all() -> None:
     print("  MULTI-AGENT PIPELINE — BACKEND LAUNCHER")
     print("=" * 60)
 
-    # ── FIX 3: Port pre-flight ───────────────────────────────────────────────
+    #  FIX 3: Port pre-flight 
     if not _preflight_ports():
         print(
             f"\n{RED}LAUNCH ABORTED — one or more ports could not be freed.{RESET}\n"
@@ -208,7 +208,7 @@ def start_all() -> None:
 
     print()
 
-    # ── FIX 2: Sequential start with health-poll ─────────────────────────────
+    #  FIX 2: Sequential start with health-poll 
     for label, rel_cwd, module, port, health_path in SERVICES:
         cwd = os.path.join(ROOT, rel_cwd)
         cmd = [
@@ -261,7 +261,7 @@ def start_all() -> None:
     print("  Logs will stream below.  Press Ctrl+C to stop everything.")
     print("=" * 60 + "\n")
 
-    # ── Stream all stdout/stderr with labelled prefix ────────────────────────
+    #  Stream all stdout/stderr with labelled prefix 
     def _stream(proc: subprocess.Popen, label: str) -> None:
         tag = _tag(label)
         assert proc.stdout
@@ -272,7 +272,7 @@ def start_all() -> None:
         t = threading.Thread(target=_stream, args=(proc, label), daemon=True)
         t.start()
 
-    # ── Wait for Ctrl+C; report unexpected exits ─────────────────────────────
+    #  Wait for Ctrl+C; report unexpected exits 
     try:
         while True:
             time.sleep(1)

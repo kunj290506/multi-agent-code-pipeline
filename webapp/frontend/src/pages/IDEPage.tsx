@@ -180,7 +180,7 @@ export default function IDEPage() {
     navigate('/login')
   }
 
-  const showStopButton = runState?.status === 'running' || runState?.status === 'awaiting_approval'
+
 
   return (
     <div className="ide-root">
@@ -209,7 +209,7 @@ export default function IDEPage() {
               }}
               style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', marginRight: '16px', fontSize: '0.85rem' }}
             >
-              ▶ Run Project
+               Run Project
             </button>
           )}
           <div className={`conn-pill ${connected ? 'conn-on' : 'conn-off'}`}>

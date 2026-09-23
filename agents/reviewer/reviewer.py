@@ -13,6 +13,8 @@ def review_code(
     code: str,
     language: str = "python",
     categories: list[str] | None = None,
+    project_context: str | None = None,
+    feature_request: str | None = None,
 ) -> dict:
     """Review code against the defined rule set.
 
@@ -21,7 +23,9 @@ def review_code(
         language: The programming language of the code.
         categories: Optional list of rule categories to run. If None,
                     all categories are run. Valid categories:
-                    'syntax', 'required_elements', 'security', 'style'.
+                    'syntax', 'required_elements', 'security', 'style', 'logic'.
+        project_context: Optional context of other files in the project.
+        feature_request: Optional original user prompt to verify logical completeness.
 
     Returns:
         A structured review result dict with keys:
@@ -32,7 +36,7 @@ def review_code(
         - issues: List of issue dicts
         - categories_checked: List of categories that were checked
     """
-    all_categories = {"syntax", "required_elements", "security", "style"}
+    all_categories = {"syntax", "required_elements", "security", "style", "logic"}
 
     if categories is not None:
         active_categories = set(categories) & all_categories
@@ -57,6 +61,10 @@ def review_code(
             all_issues.extend(rules.check_security(code))
         if "style" in active_categories:
             all_issues.extend(rules.check_style(code, language))
+        if "logic" in active_categories and feature_request:
+            all_issues.extend(rules.check_logic_completeness(code, feature_request))
+        if project_context:
+            all_issues.extend(rules.check_cross_references(code, language, project_context))
 
     # Compute severity counts.
     severity_counts = {"info": 0, "warning": 0, "error": 0, "critical": 0}

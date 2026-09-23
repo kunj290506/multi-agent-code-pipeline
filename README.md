@@ -9,24 +9,24 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 ## 5-Agent Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     n8n Orchestration Layer                  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-              ┌────────────▼────────────┐
-              │    Planner Agent         │  <- Orchestrates all agents
-              └──┬──────┬──────┬───┬───┘
-                 │      │      │   │
-    ┌────────────▼─┐ ┌──▼───┐ │ ┌─▼──────────────┐
-    │  RAG Agent   │ │Code  │ │ │  DB Agent       │
-    │  (Docs/Chroma│ │ Gen  │ │ │ (Migrations &   │
-    │   retrieval) │ │Agent │ │ │  SQL Queries)   │
-    └──────────────┘ └──┬───┘ │ └────────────────┘
-                        │     │
-                   ┌────▼─────▼────┐
-                   │ Reviewer       │
-                   │   / QA Agent  │
-                   └───────────────┘
+
+                     n8n Orchestration Layer                  
+
+                           
+              
+                  Planner Agent           <- Orchestrates all agents
+              
+                                
+       
+      RAG Agent    Code      DB Agent       
+      (Docs/Chroma  Gen     (Migrations &   
+       retrieval)  Agent     SQL Queries)   
+       
+                             
+                   
+                    Reviewer       
+                      / QA Agent  
+                   
 ```
 
 | Agent | Role | Owner |
@@ -36,6 +36,13 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 | **Code-Gen Agent** | Generates REST API endpoints and React components from specs | Member B |
 | **Reviewer/QA Agent** | Reviews generated code for bugs, style, and security issues | Member B |
 | **DB Agent** | Handles database migrations and query generation (shared) | Shared |
+
+###  Advanced CI/CD Upgrades
+
+This pipeline has been hardened into a continuous integration engine:
+- **Veteran Personas:** The Planner and Code-Gen agents operate with strict "30-year veteran architect/engineer" prompts. Placeholders, shortcuts, and boilerplate are strictly forbidden.
+- **Hedged LLM Execution:** To combat single-provider outages or rate limits, the core LLM execution layer (`call_llm`) utilizes Python's `concurrent.futures`. It simultaneously races primary requests (Groq API) alongside local fallbacks (Ollama). The pipeline instantly claims the first successful code generation, eliminating random hangs and timeouts.
+- **Logic Verification Gate:** The Reviewer Agent features a dedicated LLM-driven `check_logic_completeness` rule that cross-references generated code against the original feature request. It acts as an automated CI/CD gate, rejecting logically incomplete code back to the Code-Gen agent for self-healing up to 5 times.
 
 ---
 
@@ -165,25 +172,25 @@ curl -X POST http://localhost:11434/api/generate \
 
 ```
 multi-agent-code-pipeline/
-├── agents/
-│   ├── planner/       # Planner / Orchestrator agent        :8010
-│   ├── rag/           # RAG / Documentation retrieval agent :8011
-│   ├── db/            # Database migration & query agent    :8012–8013
-│   ├── codegen/       # Code generation agent               :8014
-│   └── reviewer/      # Code review & QA agent              :8015
-├── webapp/
-│   ├── backend/       # Orchestration API + auth            :8020
-│   └── frontend/      # React IDE / UI                      :5173
-├── target-app/        # Workspace where generated files land :8000
-├── scripts/
-│   ├── launch_backend.py  # Single-window backend launcher
-│   ├── start_all.bat      # Windows 2-window startup
-│   ├── start_all.ps1      # PowerShell 2-window startup
-│   └── start_all.sh       # Linux/macOS startup
-├── eval/              # Evaluation harness (12 test cases)
-├── n8n/               # n8n workflow definitions
-├── docker-compose.yml # Infrastructure services (n8n)
-└── .gitignore
+ agents/
+    planner/       # Planner / Orchestrator agent        :8010
+    rag/           # RAG / Documentation retrieval agent :8011
+    db/            # Database migration & query agent    :8012–8013
+    codegen/       # Code generation agent               :8014
+    reviewer/      # Code review & QA agent              :8015
+ webapp/
+    backend/       # Orchestration API + auth            :8020
+    frontend/      # React IDE / UI                      :5173
+ target-app/        # Workspace where generated files land :8000
+ scripts/
+    launch_backend.py  # Single-window backend launcher
+    start_all.bat      # Windows 2-window startup
+    start_all.ps1      # PowerShell 2-window startup
+    start_all.sh       # Linux/macOS startup
+ eval/              # Evaluation harness (12 test cases)
+ n8n/               # n8n workflow definitions
+ docker-compose.yml # Infrastructure services (n8n)
+ .gitignore
 ```
 
 ---

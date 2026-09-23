@@ -10,7 +10,7 @@ LLM_PROVIDER   : "groq" (default) | "ollama"
 GROQ_API_KEY   : Groq API key (required for groq provider)
 GROQ_MODEL     : Groq model id  (default: qwen/qwen3.8-27b)
 OLLAMA_BASE_URL: Ollama server  (default: http://localhost:11434)
-OLLAMA_MODEL   : Ollama model   (default: qwen2.5:3b-instruct-q4_K_M)
+OLLAMA_MODEL   : Ollama model   (default: qwen3-coder:latest)
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+import concurrent.futures
 from typing import Any
 
 try:
@@ -38,7 +39,7 @@ GROQ_API_KEY: str  = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL: str    = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 OLLAMA_BASE_URL: str   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str      = os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct-q4_K_M")
+OLLAMA_MODEL: str      = os.getenv("OLLAMA_MODEL", "qwen3-coder:latest")
 OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 OLLAMA_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "2048"))
 
@@ -82,7 +83,6 @@ def call_groq(
     timeout: int = 120,
 ) -> LLMResult:
     """Send a prompt to the Groq chat-completions API."""
-    max_tokens = min(max_tokens, 950)
     global _groq_client
     if _groq_client is None:
         from groq import Groq  # lazy import — not needed for Ollama-only runs
@@ -176,25 +176,55 @@ def call_llm(
     context_size: int | None = None,
     timeout: int = 600,
 ) -> LLMResult:
-    """Route to the correct backend.
+    """Route to the correct backend using Concurrent Hedged Requests.
 
     Uses LLM_PROVIDER env var (default: groq).
-    Pass provider= explicitly to override per-call.
+    If provider="groq", simultaneously dispatches to Groq and Ollama.
+    The first to return a valid (non-empty) response wins, eliminating stalls.
     """
     _provider = (provider or LLM_PROVIDER).lower()
-    if _provider == "groq":
-        return call_groq(
+    
+    if _provider != "groq":
+        return call_ollama(
             prompt,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=min(timeout, 120),
+            context_size=context_size,
+            timeout=timeout,
         )
-    return call_ollama(
-        prompt,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        context_size=context_size,
-        timeout=timeout,
-    )
+
+    # Hedged Request Logic
+    def run_groq():
+        res = call_groq(prompt, model=model, temperature=temperature, max_tokens=max_tokens, timeout=min(timeout, 120))
+        if not res.text.strip():
+            raise ValueError("Empty response from Groq")
+        return res
+
+    def run_ollama():
+        res = call_ollama(prompt, model=None, temperature=temperature, max_tokens=max_tokens, context_size=context_size, timeout=timeout)
+        if not res.text.strip():
+            raise ValueError("Empty response from Ollama")
+        return res
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_groq = executor.submit(run_groq)
+        future_ollama = executor.submit(run_ollama)
+
+        futures = [future_groq, future_ollama]
+        
+        while futures:
+            done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
+            
+            for future in done:
+                try:
+                    result = future.result()
+                    return result  # First successful result wins
+                except Exception as e:
+                    print(f"[WARN] Hedged LLM task failed: {e}")
+                    
+            futures = list(not_done)
+            
+    # If both fail, fallback to a final synchronous Ollama attempt or raise
+    print("[ERROR] Both hedged LLM tasks failed. Final fallback attempt...")
+    return call_ollama(prompt, model=None, temperature=temperature, max_tokens=max_tokens, context_size=context_size, timeout=timeout)

@@ -282,7 +282,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        # ── Run 1: Ollama ──────────────────────────────────────────────────
+        #  Run 1: Ollama 
         if not args.groq_only:
             stop_services()
             ok = start_services({"LLM_PROVIDER": "ollama"})
@@ -293,7 +293,7 @@ def main() -> None:
         else:
             ollama_csv = ROOT / "eval" / "results_ollama.csv"
 
-        # ── Run 2: Groq ────────────────────────────────────────────────────
+        #  Run 2: Groq 
         if not args.ollama_only:
             stop_services()
             ok = start_services({
@@ -311,7 +311,7 @@ def main() -> None:
     finally:
         stop_services()
 
-    # ── Print comparison ───────────────────────────────────────────────────
+    #  Print comparison 
     ollama_rows = load_csv(ollama_csv)
     groq_rows = load_csv(groq_csv)
     print_comparison(ollama_rows, groq_rows)

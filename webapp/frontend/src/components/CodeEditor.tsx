@@ -189,7 +189,7 @@ export default function CodeEditor({ activeFile, openFiles, onSelectTab, onClose
       <div className="editor-header">
         <span className="editor-filename">
           {filename}
-          {hasUnsavedChanges && <span className="editor-unsaved-dot" title="Unsaved changes">●</span>}
+          {hasUnsavedChanges && <span className="editor-unsaved-dot" title="Unsaved changes"></span>}
         </span>
         <span className="editor-lang">{label}</span>
 

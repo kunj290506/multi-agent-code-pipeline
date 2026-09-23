@@ -86,8 +86,8 @@ PLAN_SCHEMA = {
 # Prompt template
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are a software project planner. Your job is to decompose a feature request
-into an ordered list of subtasks. Each subtask must be assigned to exactly one of
+SYSTEM_PROMPT = """You are a 30-year veteran Staff/Principal Software Architect. Your job is to decompose a feature request
+into a flawless, production-ready ordered list of subtasks. You must architect robust, end-to-end integrated solutions without leaving out crucial gluing logic. Each subtask must be assigned to exactly one of
 the following agents:
 
 - rag-agent: Retrieves relevant documentation and codebase context.
@@ -104,7 +104,8 @@ Rules:
 5. If the request implies a full project rebuild or replacement (e.g., "delete this whole project"),
    the FIRST subtask MUST be a cleanup step assigned to the "system" agent.
 6. WHOLE-PROJECT REQUESTS (e.g. "build a calculator app", "create a todo app"):
-    - Create ONE codegen-agent subtask per required runtime output file (e.g. index.html, style.css, app.js).
+   - The FIRST subtask MUST be a cleanup step assigned to the "system" agent with the description "Delete the entire existing project directory to prepare for a fresh build."
+   - Create ONE codegen-agent subtask per required runtime output file (e.g. index.html, style.css, app.js).
    - Each codegen subtask MUST include a "target_filename" field with the exact filename to write.
    - Do NOT create a single codegen subtask for the whole project — one subtask per file only.
     - Do not add README.md or other documentation files unless the request explicitly asks for them.
@@ -113,7 +114,7 @@ Rules:
 7. SINGLE-FEATURE REQUESTS (adding to an existing project): use rag-agent first if helpful,
    then codegen-agent (one subtask per file changed), then db-agent only if needed.
 8. Always include a "reasoning" field in the top-level response explaining your decomposition.
-9. Keep descriptions concise but actionable.
+9. Keep descriptions concise but actionable. For whole-project requests, ensure that the description for the main entrypoint file (like index.html) explicitly states which other files (like style.css or script.js) it must link/import, and set the dependency array so the entrypoint is generated LAST.
 
 Output schema:
 {
@@ -168,14 +169,32 @@ def _extract_json(text: str) -> dict:
 
     # Find the matching closing brace.
     depth = 0
+    in_string = False
+    escape_next = False
+    
     for i in range(brace_start, len(cleaned)):
-        if cleaned[i] == "{":
-            depth += 1
-        elif cleaned[i] == "}":
-            depth -= 1
-            if depth == 0:
-                json_str = cleaned[brace_start : i + 1]
-                return json.loads(json_str)
+        char = cleaned[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+            
+        if char == '\\':
+            escape_next = True
+            continue
+            
+        if char == '"':
+            in_string = not in_string
+            continue
+            
+        if not in_string:
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    json_str = cleaned[brace_start : i + 1]
+                    return json.loads(json_str)
 
     raise ValueError("Unbalanced braces in model output.")
 
@@ -332,23 +351,23 @@ def decompose_offline(feature_request: str, file_manifest=None, structural_map=N
                 {
                     "task_id": "task_2",
                     "agent": "codegen-agent",
-                    "description": "Generate index.html for a simple calculator app with buttons for 0-9, +, -, *, /, =, C and a display.",
-                    "dependencies": ["task_1"],
-                    "target_filename": "index.html",
-                },
-                {
-                    "task_id": "task_3",
-                    "agent": "codegen-agent",
                     "description": "Generate style.css for the calculator app — dark theme, grid layout for buttons.",
                     "dependencies": ["task_1"],
                     "target_filename": "style.css",
                 },
                 {
-                    "task_id": "task_4",
+                    "task_id": "task_3",
                     "agent": "codegen-agent",
                     "description": "Generate script.js for the calculator app — handles button clicks, evaluates expressions, updates display.",
                     "dependencies": ["task_1"],
                     "target_filename": "script.js",
+                },
+                {
+                    "task_id": "task_4",
+                    "agent": "codegen-agent",
+                    "description": "Generate index.html for a simple calculator app with buttons for 0-9, +, -, *, /, =, C and a display. Must include <link href='style.css'> and <script src='script.js'>.",
+                    "dependencies": ["task_2", "task_3"],
+                    "target_filename": "index.html",
                 },
             ]
         }
@@ -370,23 +389,23 @@ def decompose_offline(feature_request: str, file_manifest=None, structural_map=N
                 {
                     "task_id": "task_2",
                     "agent": "codegen-agent",
-                    "description": "Generate index.html for perfcat webapp.",
-                    "dependencies": ["task_1"],
-                    "target_filename": "index.html",
-                },
-                {
-                    "task_id": "task_3",
-                    "agent": "codegen-agent",
                     "description": "Generate style.css for perfcat webapp.",
                     "dependencies": ["task_1"],
                     "target_filename": "style.css",
                 },
                 {
-                    "task_id": "task_4",
+                    "task_id": "task_3",
                     "agent": "codegen-agent",
                     "description": "Generate script.js for perfcat webapp.",
                     "dependencies": ["task_1"],
                     "target_filename": "script.js",
+                },
+                {
+                    "task_id": "task_4",
+                    "agent": "codegen-agent",
+                    "description": "Generate index.html for perfcat webapp. Must include <link href='style.css'> and <script src='script.js'>.",
+                    "dependencies": ["task_2", "task_3"],
+                    "target_filename": "index.html",
                 },
             ]
         }
@@ -433,30 +452,36 @@ def decompose_offline(feature_request: str, file_manifest=None, structural_map=N
             "subtasks": [
                 {
                     "task_id": "task_1",
-                    "agent": "codegen-agent",
-                    "description": f"Generate index.html — the main HTML structure for: {app_name}",
+                    "agent": "system",
+                    "description": "Delete the entire existing project directory to prepare for a fresh build.",
                     "dependencies": [],
-                    "target_filename": "index.html",
                 },
                 {
                     "task_id": "task_2",
                     "agent": "codegen-agent",
                     "description": f"Generate style.css — styling for: {app_name}",
-                    "dependencies": [],
+                    "dependencies": ["task_1"],
                     "target_filename": "style.css",
                 },
                 {
                     "task_id": "task_3",
                     "agent": "codegen-agent",
                     "description": f"Generate script.js — all interactivity and logic for: {app_name}",
-                    "dependencies": [],
+                    "dependencies": ["task_1"],
                     "target_filename": "script.js",
                 },
                 {
                     "task_id": "task_4",
                     "agent": "codegen-agent",
+                    "description": f"Generate index.html — the main HTML structure for: {app_name}. Must include <link href='style.css'> and <script src='script.js'>.",
+                    "dependencies": ["task_2", "task_3"],
+                    "target_filename": "index.html",
+                },
+                {
+                    "task_id": "task_5",
+                    "agent": "codegen-agent",
                     "description": f"Generate README.md — project description and usage instructions for: {app_name}",
-                    "dependencies": [],
+                    "dependencies": ["task_1"],
                     "target_filename": "README.md",
                 },
             ],

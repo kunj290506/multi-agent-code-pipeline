@@ -10,12 +10,12 @@ import os
 # Ollama LLM settings
 # ---------------------------------------------------------------------------
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct-q4_K_M")
-GROQ_MODEL: str = os.getenv(
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3-coder:latest")
+GROQ_MODEL = os.getenv(
     "PLANNER_GROQ_MODEL", os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 )
-GROQ_WHOLE_PROJECT_MODEL: str = os.getenv(
-    "PLANNER_GROQ_WHOLE_PROJECT_MODEL", "openai/gpt-oss-20b"
+GROQ_WHOLE_PROJECT_MODEL = os.getenv(
+    "PLANNER_GROQ_WHOLE_PROJECT_MODEL", "qwen/qwen3.8-27b"
 )
 
 # ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ VALID_AGENTS: list[str] = [
 # LLM generation parameters
 # ---------------------------------------------------------------------------
 TEMPERATURE: float = float(os.getenv("PLANNER_TEMPERATURE", "0.1"))
-MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "800"))
+MAX_TOKENS: int = int(os.getenv("PLANNER_MAX_TOKENS", "2500"))
 OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 OLLAMA_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "2048"))
 

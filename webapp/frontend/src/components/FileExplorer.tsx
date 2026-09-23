@@ -35,7 +35,7 @@ function TreeNode({
           style={{ paddingLeft }}
           onClick={() => setExpanded(e => !e)}
         >
-          <span style={{ marginRight: 4 }}>{expanded ? '▾' : '▸'}</span>
+          <span style={{ marginRight: 4 }}>{expanded ? '' : ''}</span>
           <span className="explorer-row-name">{node.name}</span>
         </div>
         {expanded && node.children?.map(child => (

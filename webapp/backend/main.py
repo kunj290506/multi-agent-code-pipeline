@@ -36,6 +36,7 @@ import collections
 import json
 import logging
 import os
+import re
 import shutil
 import signal as _signal
 import socket
@@ -891,9 +892,10 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
     task_events = {task["task_id"]: asyncio.Event() for task in subtasks}
     run_context = {"context_str": context_str, "last_codegen_artifact": last_codegen_artifact}
     cancel_handled = False
+    pipeline_failed = False
 
     async def process_task(task):
-        nonlocal cancel_handled
+        nonlocal cancel_handled, pipeline_failed
         
         # Wait for dependencies
         for dep in task.get("dependencies", []):
@@ -1027,6 +1029,11 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                         except Exception:
                             pass
                     _write_to_workspace(filename, code, workspace)
+                    # Append this newly written file to the context string so subsequent codegen tasks see it.
+                    if len(run_context["context_str"]) > 32000:
+                        run_context["context_str"] += f"\n--- {filename} ---\n[File omitted from context to prevent token limit overflow]\n"
+                    else:
+                        run_context["context_str"] += f"\n--- {filename} ---\n{code}\n"
                     # Push file_written event with real diff data.
                     await _sse_push(request_id, {
                         "type": "file_written",
@@ -1040,10 +1047,12 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                         "message": f"Wrote {filename} (verdict: {final_verdict})",
                     })
                     await broadcast({"type": "file_update", "filename": filename, "path": os.path.join(workspace, filename)})
-                elif final_verdict == "fail":
+                
+                if final_verdict in ("fail", "exhausted"):
+                    pipeline_failed = True
                     await broadcast({
                         "type": "log", "agent": "System",
-                        "message": "File NOT written — review failed with no retry budget remaining.",
+                        "message": f"File write completed with warnings or failed entirely — review final verdict was {final_verdict}.",
                         "status": "warning",
                     })
 
@@ -1052,10 +1061,13 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                     req_payload = {"artifact": run_context["last_codegen_artifact"]}
                 else:
                     req_payload = {"code": "# No code generated", "language": "python"}
+                req_payload["project_context"] = run_context["context_str"]
                 t0 = time.monotonic()
                 res = await call_agent("reviewer-agent", req_payload)
                 dur = int((time.monotonic() - t0) * 1000)
                 verdict = res.get("verdict", "")
+                if verdict == "fail":
+                    pipeline_failed = True
                 step = _step_record(
                     "reviewer-agent", "done",
                     input_summary="standalone review",
@@ -1072,6 +1084,7 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
                 })
 
         except Exception as exc:
+            pipeline_failed = True
             logger.error("Agent %s failed: %s", agent, exc)
             step = _step_record(agent, "failed", input_summary=desc[:200], output_summary=str(exc))
             await _push_step(request_id, step)
@@ -1087,6 +1100,135 @@ async def _run_pipeline(request_id: str, feature_request: str, skip_clear: bool 
         await asyncio.gather(*(process_task(t) for t in subtasks))
 
     if not await _is_cancelled() and not cancel_handled:
+        if pipeline_failed:
+            await broadcast({"type": "log", "agent": "Integration Check", "message": "Skipping integration check due to failed subtasks.", "status": "error"})
+            await _finalize_run(request_id, "error")
+            return
+
+        # --- Integration Check ---
+        await broadcast({"type": "log", "agent": "Integration Check", "message": "Running whole-project execution check..."})
+        integration_issues = []
+        
+        proj_type = _detect_project_type(workspace)
+        
+        if proj_type["type"] == "static" and proj_type["runnable"]:
+            # Playwright execution check for web apps
+            port = _find_free_port()
+            server_cmd = [sys.executable, "-m", "http.server", str(port)]
+            server_proc = subprocess.Popen(server_cmd, cwd=workspace, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            try:
+                # Small wait to let server bind
+                await asyncio.sleep(0.5)
+                from playwright.async_api import async_playwright
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    page = await browser.new_page()
+                    
+                    # Capture page errors (uncaught exceptions)
+                    page.on("pageerror", lambda err: integration_issues.append(f"Uncaught JS Exception: {err}"))
+                    
+                    # Auto-dismiss dialogs so alerts don't hang the page
+                    page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
+                    
+                    # Capture console errors
+                    page.on("console", lambda msg: integration_issues.append(f"Console Error: {msg.text}") if msg.type == "error" else None)
+                    
+                    # Capture failed network requests (404s, etc)
+                    page.on("requestfailed", lambda req: integration_issues.append(f"Failed to load resource: {req.url} ({req.failure})"))
+                    
+                    try:
+                        response = await page.goto(f"http://localhost:{port}/index.html", wait_until="networkidle", timeout=5000)
+                        if response and not response.ok:
+                            integration_issues.append(f"Failed to load index.html, status: {response.status}")
+                            
+                        # Interaction Check: Click all buttons to trigger interactive JS handlers
+                        try:
+                            buttons = await page.locator("button, input[type='button'], input[type='submit']").all()
+                            for btn in buttons[:10]:  # Limit to 10 to avoid infinite loops in dynamic UI
+                                try:
+                                    if await btn.is_visible():
+                                        await btn.click(timeout=1000, no_wait_after=True)
+                                        await asyncio.sleep(0.1) # Yield to let async handlers fire
+                                except Exception:
+                                    pass # Ignore unclickable buttons (e.g. disabled, covered)
+                        except Exception as e:
+                            pass # If locating fails, just proceed
+                    except Exception as e:
+                        integration_issues.append(f"Page load timeout or error: {e}")
+                        
+                    await browser.close()
+            except ImportError:
+                integration_issues.append("Playwright not installed for runtime checks. Please 'pip install playwright' and 'playwright install chromium'.")
+            except Exception as e:
+                integration_issues.append(f"Playwright execution failed: {e}")
+            finally:
+                server_proc.terminate()
+                
+        elif proj_type["type"] in ("python", "node") and proj_type["runnable"]:
+            # Non-web fallback smoke tests
+            cmd = proj_type["command"]
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=workspace,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+                    if proc.returncode != 0:
+                        err_text = stderr.decode('utf-8', errors='replace').strip()[-500:]
+                        integration_issues.append(f"Process crashed on startup (exit code {proc.returncode}). Error output:\n{err_text}")
+                except asyncio.TimeoutError:
+                    # Timeout is a success for a server or continuous app!
+                    proc.terminate()
+                    await proc.wait()
+            except Exception as e:
+                integration_issues.append(f"Failed to start smoke test: {e}")
+                
+        if integration_issues:
+            issue_text = "\n".join(integration_issues)
+            await broadcast({"type": "log", "agent": "Integration Check", "message": f"Found {len(integration_issues)} integration issues:\n{issue_text}", "status": "warning"})
+            
+            # Route back to Code-Gen for a targeted fix (2 attempts max)
+            desc = "Integration Check Failed. Please fix the following issues in the project:\n" + issue_text
+            
+            try:
+                codegen_res, review_res = await _run_codegen_with_review(
+                    desc=desc,
+                    context_str=run_context["context_str"],
+                    request_id=request_id,
+                    attempt_budget=2
+                )
+                final_verdict = review_res.get("final_verdict", "unknown")
+                artifact = codegen_res.get("artifact", {})
+                filename = _resolve_filename(artifact, desc)
+                code = artifact.get("code")
+                
+                if code and final_verdict in ("pass", "exhausted"):
+                    _write_to_workspace(filename, code, workspace)
+                    if len(run_context["context_str"]) > 32000:
+                        run_context["context_str"] += f"\n--- {filename} ---\n[File omitted from context to prevent token limit overflow]\n"
+                    else:
+                        run_context["context_str"] += f"\n--- {filename} ---\n{code}\n"
+                    await _sse_push(request_id, {
+                        "type": "file_written",
+                        "request_id": request_id,
+                        "filename": filename,
+                        "previous_content": None,
+                        "new_content": code,
+                    })
+                    await broadcast({"type": "log", "agent": "Integration Check", "message": f"Applied integration fix to {filename} (verdict: {final_verdict})"})
+                    await broadcast({"type": "file_update", "filename": filename, "path": os.path.join(workspace, filename)})
+                else:
+                    await broadcast({"type": "log", "agent": "Integration Check", "message": "Failed to resolve integration issues after retries.", "status": "error"})
+            except Exception as e:
+                logger.error("Integration Check fix failed: %s", e)
+                await broadcast({"type": "log", "agent": "Integration Check", "message": f"Failed to execute integration fix: {e}", "status": "error"})
+        else:
+            await broadcast({"type": "log", "agent": "Integration Check", "message": "Integration check passed cleanly."})
+            
         await _finalize_run(request_id, "success")
 
 
@@ -1098,7 +1240,7 @@ async def _run_codegen_with_review(
     desc: str,
     context_str: str,
     request_id: str,
-    attempt_budget: int = 2,
+    attempt_budget: int = 5,
     target_filename: str | None = None,
 ) -> tuple[dict, dict]:
     """Call Code-Gen then Reviewer with up to attempt_budget total attempts.
@@ -1132,14 +1274,20 @@ async def _run_codegen_with_review(
             payload["prior_issues"] = prior_issues
 
         t0 = time.monotonic()
-        codegen_result = await call_agent("codegen-agent", payload)
+        try:
+            codegen_result = await call_agent("codegen-agent", payload)
+        except Exception as exc:
+            # Handle HTTP 500s (e.g. LLM timeouts or local server down) without crashing the pipeline
+            codegen_result = {"artifact": {}, "error": str(exc)}
+            logger.warning("[%s] CodeGen failed on attempt %d: %s", request_id, attempt, exc)
+            
         codegen_dur = int((time.monotonic() - t0) * 1000)
 
         artifact = codegen_result.get("artifact", {})
-        code_snippet = (artifact.get("code") or "")[:120]
+        code_snippet = (artifact.get("code") or "")[:120] if artifact else "Failed to generate code."
 
         codegen_step = _step_record(
-            "codegen-agent", "done",
+            "codegen-agent", "done" if "error" not in codegen_result else "failed",
             attempt_number=attempt,
             input_summary=desc[:200],
             output_summary=f"attempt {attempt}: {code_snippet}",
@@ -1148,9 +1296,18 @@ async def _run_codegen_with_review(
         )
         await _push_step(request_id, codegen_step)
 
-        t0 = time.monotonic()
-        review_result = await call_agent("reviewer-agent", {"artifact": artifact})
-        review_dur = int((time.monotonic() - t0) * 1000)
+        if "error" in codegen_result:
+            # Skip reviewer if codegen completely crashed, but mock a failure so we can retry
+            review_result = {
+                "verdict": "fail",
+                "issues_by_severity": {"critical": 1},
+                "issues": [{"category": "system", "severity": "critical", "message": f"CodeGen API failed: {codegen_result['error']}"}]
+            }
+            review_dur = 0
+        else:
+            t0 = time.monotonic()
+            review_result = await call_agent("reviewer-agent", {"artifact": artifact})
+            review_dur = int((time.monotonic() - t0) * 1000)
 
         verdict = review_result.get("verdict", "unknown")
         severity_counts: dict = review_result.get("issues_by_severity", {})
@@ -1660,7 +1817,7 @@ async def run_project(
                 html_content.append("</head><body>")
                 html_content.append('<div id="root"></div>')
                 for js in js_files:
-                    html_content.append(f'<script src="{js}"></script>')
+                    html_content.append(f'<script type="module" src="{js}"></script>')
                 html_content.append("</body></html>")
                 
                 with open(os.path.join(workspace_dir, "index.html"), "w", encoding="utf-8") as f:
@@ -1671,7 +1828,14 @@ async def run_project(
             favicon_path = os.path.join(workspace_dir, "favicon.ico")
             if not os.path.exists(favicon_path):
                 open(favicon_path, "wb").close()
-            cmd = [sys.executable, "-m", "http.server", str(port)]
+            cmd = [
+                sys.executable,
+                "-c",
+                f"import http.server, socketserver\n"
+                f"class QuietHandler(http.server.SimpleHTTPRequestHandler):\n"
+                f"    def log_message(self, format, *args): pass\n"
+                f"socketserver.TCPServer(('', {port}), QuietHandler).serve_forever()"
+            ]
             process = subprocess.Popen(
                 cmd,
                 cwd=workspace_dir,

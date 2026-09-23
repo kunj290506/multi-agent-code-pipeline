@@ -180,7 +180,7 @@ function PlanApproval({
             onClick={() => setReasoningOpen(o => !o)}
           >
             <span>REASONING</span>
-            <span>{reasoningOpen ? '▾' : '▸'}</span>
+            <span>{reasoningOpen ? '' : ''}</span>
           </div>
           {reasoningOpen && (
             <div className="step-reasoning-body">{plan.reasoning}</div>
@@ -203,7 +203,7 @@ function PlanApproval({
               <div className="plan-step-desc">{task.description}</div>
               {task.preflight_status && task.preflight_status !== 'ok' && (
                 <div className={`preflight-alert preflight-${task.preflight_status}`}>
-                  <div className="preflight-alert-text">⚠ {task.preflight_details}</div>
+                  <div className="preflight-alert-text"> {task.preflight_details}</div>
                   {task.preflight_old_content !== undefined && (
                     <div className="preflight-resolution">
                       <label>Action:</label>
@@ -230,7 +230,7 @@ function PlanApproval({
               title="Remove this step"
               aria-label={`Remove step ${task.task_id}`}
             >
-              ✕
+              
             </button>
           </div>
         ))}
@@ -274,7 +274,7 @@ function RagDetail({ data }: { data: Record<string, unknown> }) {
   const sources = data.sources as string[] | undefined
   return (
     <div className="detail-rag">
-      {lowConf && <div className="low-conf-flag">⚠ LOW CONFIDENCE — treat this answer as unverified</div>}
+      {lowConf && <div className="low-conf-flag"> LOW CONFIDENCE — treat this answer as unverified</div>}
       {confidence != null && (
         <div className="detail-row">
           <span className="detail-label">Confidence</span>
@@ -386,7 +386,7 @@ function StepCard({ step, isRetry }: { step: Step; isRetry: boolean }) {
           {step.duration_ms != null && (
             <span className="step-dur">{fmtDuration(step.duration_ms)}</span>
           )}
-          <span className="step-toggle">{open ? '▾' : '▸'}</span>
+          <span className="step-toggle">{open ? '' : ''}</span>
         </div>
       </div>
       {/* Output summary always visible */}
@@ -401,7 +401,7 @@ function StepCard({ step, isRetry }: { step: Step; isRetry: boolean }) {
             onClick={() => setReasoningOpen(o => !o)}
           >
             <span>REASONING</span>
-            <span>{reasoningOpen ? '▾' : '▸'}</span>
+            <span>{reasoningOpen ? '' : ''}</span>
           </div>
           {reasoningOpen && (
             <div className="step-reasoning-body">{reasoning}</div>

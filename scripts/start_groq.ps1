@@ -7,7 +7,7 @@
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
-# ── Environment ───────────────────────────────────────────────────────────────
+#  Environment 
 $env:LLM_PROVIDER = "groq"
 $env:GROQ_MODEL   = "qwen/qwen3.8-27b"
 
@@ -36,21 +36,21 @@ Write-Host "  LLM_PROVIDER : $env:LLM_PROVIDER" -ForegroundColor Yellow
 Write-Host "  GROQ_MODEL   : $env:GROQ_MODEL" -ForegroundColor Yellow
 Write-Host ""
 
-# ── Kill anything still on agent ports ────────────────────────────────────────
+#  Kill anything still on agent ports 
 foreach ($port in @(5173,8010,8011,8012,8013,8014,8015,8020)) {
     $targetPid = (netstat -ano 2>$null | Select-String ":$port " | Select-String "LISTENING" | ForEach-Object { ($_ -split "\s+")[-1] } | Select-Object -First 1)
     if ($targetPid) { taskkill /F /PID $targetPid 2>$null | Out-Null }
 }
 Start-Sleep -Seconds 1
 
-# ── Backend window ────────────────────────────────────────────────────────────
+#  Backend window 
 Write-Host "[1/2] Starting backend services..." -ForegroundColor Yellow
 $key = $env:GROQ_API_KEY
 $model = $env:GROQ_MODEL
 Start-Process powershell -ArgumentList "-NoExit", "-Command",
     "`$env:LLM_PROVIDER='groq'; `$env:GROQ_API_KEY='$key'; `$env:GROQ_MODEL='$model'; Set-Location '$RepoRoot'; python scripts/launch_backend.py"
 
-# ── Wait for webapp backend health ────────────────────────────────────────────
+#  Wait for webapp backend health 
 Write-Host "  Waiting for backend (:8020)..." -ForegroundColor Yellow
 $ready = $false
 $deadline = (Get-Date).AddSeconds(300)
@@ -68,7 +68,7 @@ if (-not $ready) {
 }
 Write-Host "  Backend healthy." -ForegroundColor Green
 
-# ── Frontend window ───────────────────────────────────────────────────────────
+#  Frontend window 
 Write-Host "[2/2] Starting frontend (Vite)..." -ForegroundColor Yellow
 Start-Process powershell -ArgumentList "-NoExit", "-Command",
     "Set-Location '$RepoRoot\webapp\frontend'; npm run dev -- --host"

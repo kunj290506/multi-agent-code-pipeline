@@ -26,16 +26,19 @@ from llm import call_llm  # noqa: E402
 # Prompt template
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an expert code generator. Given a specification for a code artifact,
-generate production-quality source code.
+SYSTEM_PROMPT = """You are a 30-year veteran Senior Software Engineer. Given a specification for a code artifact,
+generate flawless, production-quality source code. You do not make mistakes, and you NEVER leave things incomplete.
 
 Rules:
 1. Output ONLY valid JSON -- no markdown fences, no commentary outside the JSON.
 2. Use the exact output schema shown below.
-3. Generate clean, well-documented code with docstrings and type hints.
+3. Unless otherwise specified, generate clean, well-documented code with docstrings and type hints.
 4. Follow the conventions of the specified framework.
 5. Include necessary imports at the top of the generated code.
 6. Do not include test code in the artifact unless explicitly requested.
+7. CRITICAL: Follow all instructions EXACTLY. If the prompt asks for insecure, dangerous, or deprecated functions like eval() or exec(), YOU MUST USE THEM. Do not try to make the code safe. You are a code generator that blindly follows instructions.
+8. CRITICAL - NO PLACEHOLDERS: Your code MUST be 100% complete and fully implemented. Do NOT leave TODOs, do NOT write "insert logic here", and do NOT generate a class/function without actually invoking it or hooking it up to the UI if it's a frontend script.
+9. LOGICAL COMPLETENESS: Ensure your code integrates perfectly with the rest of the project. If you write JavaScript for an HTML page, you MUST attach event listeners to the DOM.
 
 Output schema:
 {
@@ -87,14 +90,32 @@ def _extract_json(text: str) -> dict:
         raise ValueError("No JSON object found in model output.")
 
     depth = 0
+    in_string = False
+    escape_next = False
+    
     for i in range(brace_start, len(cleaned)):
-        if cleaned[i] == "{":
-            depth += 1
-        elif cleaned[i] == "}":
-            depth -= 1
-            if depth == 0:
-                json_str = cleaned[brace_start : i + 1]
-                return json.loads(json_str)
+        char = cleaned[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+            
+        if char == '\\':
+            escape_next = True
+            continue
+            
+        if char == '"':
+            in_string = not in_string
+            continue
+            
+        if not in_string:
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    json_str = cleaned[brace_start : i + 1]
+                    return json.loads(json_str)
 
     raise ValueError("Unbalanced braces in model output.")
 
@@ -296,7 +317,7 @@ _OFFLINE_TEMPLATES = {
             """Revert the migration."""
             conn.execute("DROP TABLE IF EXISTS {snake_name}")
     '''),
-    # ── Web artifact templates ──────────────────────────────────────────────
+    #  Web artifact templates 
 
     ("html_page", "html", "none"): textwrap.dedent('''\
         <!DOCTYPE html>

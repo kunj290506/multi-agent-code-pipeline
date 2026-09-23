@@ -51,6 +51,14 @@ class ReviewRequest(BaseModel):
         default=None,
         description="Optional CodeGen artifact output wrapper to extract code and language from.",
     )
+    project_context: str | None = Field(
+        default=None,
+        description="Current context of all generated files for cross-file references.",
+    )
+    feature_request: str | None = Field(
+        default=None,
+        description="The original user prompt or subtask description to verify logical completeness against.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +126,8 @@ def review(request: ReviewRequest):
             code=request.code,
             language=request.language,
             categories=request.categories,
+            project_context=request.project_context,
+            feature_request=request.feature_request,
         )
         return ReviewResponse(**result)
     except Exception as exc:

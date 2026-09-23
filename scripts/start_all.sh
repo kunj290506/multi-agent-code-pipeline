@@ -36,7 +36,7 @@ echo "============================================================"
 echo "  MULTI-AGENT PIPELINE STARTUP"
 echo "============================================================"
 
-# ── Install Python deps (fast / silent on repeat runs) ───────────────────────
+#  Install Python deps (fast / silent on repeat runs) 
 echo "[1/3] Installing Python dependencies..."
 python -m pip install \
     -r "$REPO_ROOT/agents/planner/requirements.txt" \
@@ -47,11 +47,11 @@ python -m pip install \
     -r "$REPO_ROOT/webapp/backend/requirements.txt" \
     -q
 
-# ── Install frontend deps ─────────────────────────────────────────────────────
+#  Install frontend deps 
 echo "[2/3] Installing frontend dependencies..."
 (cd "$REPO_ROOT/webapp/frontend" && npm install --silent)
 
-# ── Launch frontend in background ────────────────────────────────────────────
+#  Launch frontend in background 
 echo "[3/3] Starting frontend in background (port 5173)..."
 (cd "$REPO_ROOT/webapp/frontend" && npm run dev) &
 FRONTEND_PID=$!
@@ -68,7 +68,7 @@ echo "  Press Ctrl+C to stop everything."
 echo "============================================================"
 echo ""
 
-# ── Run all backend agents in this window (single process, labelled logs) ────
+#  Run all backend agents in this window (single process, labelled logs) 
 cleanup() {
     kill "$FRONTEND_PID" 2>/dev/null || true
     wait "$FRONTEND_PID" 2>/dev/null || true
