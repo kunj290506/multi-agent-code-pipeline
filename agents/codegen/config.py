@@ -10,7 +10,7 @@ import os
 # Ollama LLM settings
 # ---------------------------------------------------------------------------
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen3-coder:latest")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 GROQ_MODEL = os.getenv(
 	"CODEGEN_GROQ_MODEL", os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 )
@@ -20,8 +20,8 @@ GROQ_MODEL = os.getenv(
 # ---------------------------------------------------------------------------
 TEMPERATURE: float = float(os.getenv("CODEGEN_TEMPERATURE", "0.2"))
 MAX_TOKENS: int = int(os.getenv("CODEGEN_MAX_TOKENS", "4096"))
-OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
-OLLAMA_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "2048"))
+OLLAMA_KEEP_ALIVE: str = os.getenv("OLLAMA_KEEP_ALIVE", "-1")
+OLLAMA_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "4096"))
 
 # ---------------------------------------------------------------------------
 # API server

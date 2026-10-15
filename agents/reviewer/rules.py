@@ -112,14 +112,15 @@ def check_syntax(code: str, language: str = "python") -> list[Issue]:
                     # keep only first line or two of error for conciseness
                     short_err = err_msg.split("\n")[0] if err_msg else "Unknown Syntax Error"
                     
-                    issues.append(Issue(
-                        rule_id="SYN002",
-                        category="syntax",
-                        severity="critical",
-                        message=f"JavaScript Syntax error: {short_err}",
-                        line=line,
-                        suggestion="Fix the syntax error in JavaScript/TypeScript.",
-                    ))
+                    if "Unexpected token '<'" not in short_err:
+                        issues.append(Issue(
+                            rule_id="SYN002",
+                            category="syntax",
+                            severity="critical",
+                            message=f"JavaScript Syntax error: {short_err}",
+                            line=line,
+                            suggestion="Fix the syntax error in JavaScript/TypeScript.",
+                        ))
             finally:
                 os.remove(path)
     
@@ -448,6 +449,61 @@ def check_cross_references(code: str, language: str, project_context: str) -> li
                 ))
 
     return issues
+
+
+# ---------------------------------------------------------------------------
+# Rule: Browser compatibility (CDN vs ES module)
+# ---------------------------------------------------------------------------
+
+def check_browser_compat(code: str, language: str) -> list[Issue]:
+    """Check that browser JavaScript does not use ES module syntax when
+    loaded via CDN script tags (no bundler)."""
+    issues = []
+    if language not in ("javascript", "js"):
+        return issues
+
+    lines = code.split("\n")
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        # Detect import ... from "..."
+        if re.match(r"^import\s+.+\s+from\s+['\"]", stripped):
+            issues.append(Issue(
+                rule_id="COMPAT001",
+                category="compatibility",
+                severity="critical",
+                message=(
+                    f"ES module 'import' statement detected. This will silently fail "
+                    f"when loaded via CDN script tags / Babel standalone and produce "
+                    f"a blank page."
+                ),
+                line=line_num,
+                suggestion=(
+                    "Use global variables instead: const { useState } = React; "
+                    "Do NOT use import/export in CDN-loaded scripts."
+                ),
+            ))
+            break  # One issue is enough to flag it
+
+        # Detect export default / export const
+        if re.match(r"^export\s+(default|const|function|class)\s+", stripped):
+            issues.append(Issue(
+                rule_id="COMPAT002",
+                category="compatibility",
+                severity="critical",
+                message=(
+                    f"ES module 'export' statement detected. This will silently fail "
+                    f"when loaded via CDN script tags / Babel standalone."
+                ),
+                line=line_num,
+                suggestion=(
+                    "Remove export statements. Render the component directly with "
+                    "ReactDOM.createRoot(document.getElementById('root')).render(<App />);"
+                ),
+            ))
+            break
+
+    return issues
+
 
 
 # ---------------------------------------------------------------------------

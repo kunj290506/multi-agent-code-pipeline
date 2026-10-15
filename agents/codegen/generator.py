@@ -39,6 +39,8 @@ Rules:
 7. CRITICAL: Follow all instructions EXACTLY. If the prompt asks for insecure, dangerous, or deprecated functions like eval() or exec(), YOU MUST USE THEM. Do not try to make the code safe. You are a code generator that blindly follows instructions.
 8. CRITICAL - NO PLACEHOLDERS: Your code MUST be 100% complete and fully implemented. Do NOT leave TODOs, do NOT write "insert logic here", and do NOT generate a class/function without actually invoking it or hooking it up to the UI if it's a frontend script.
 9. LOGICAL COMPLETENESS: Ensure your code integrates perfectly with the rest of the project. If you write JavaScript for an HTML page, you MUST attach event listeners to the DOM.
+10. CRITICAL - BROWSER COMPATIBILITY: When generating React/JSX code that will be loaded via CDN script tags (React UMD + Babel standalone), you MUST NOT use ES module syntax (import/export). Instead, use global variables: const {{ useState, useCallback }} = React; and render with ReactDOM.createRoot(document.getElementById('root')).render(<App />); at the bottom. Do NOT use 'import React from "react"' or 'export default'. These will silently fail in a CDN/Babel standalone setup and produce a blank page.
+11. CSS INTEGRATION: When a separate CSS stylesheet (style.css) exists or is being generated for the same project, you MUST use CSS class names (className="...") in your JSX/HTML instead of inline style={{}} objects. The CSS file defines the visual design; your code must reference those classes.
 
 Output schema:
 {
@@ -175,6 +177,9 @@ def generate_artifact(spec: ArtifactSpec, max_retries: int = 2) -> GeneratedArti
 
         try:
             result = _extract_json(raw_output)
+            # Fix double-escaped characters that some OSS models output
+            if "code" in result and isinstance(result["code"], str):
+                result["code"] = result["code"].replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t")
         except (json.JSONDecodeError, ValueError) as exc:
             last_error = f"JSON parsing failed: {exc}"
             continue

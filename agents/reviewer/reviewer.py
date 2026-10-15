@@ -65,6 +65,8 @@ def review_code(
             all_issues.extend(rules.check_logic_completeness(code, feature_request))
         if project_context:
             all_issues.extend(rules.check_cross_references(code, language, project_context))
+        # Browser compatibility: catch ES module import/export in CDN-loaded JS
+        all_issues.extend(rules.check_browser_compat(code, language))
 
     # Compute severity counts.
     severity_counts = {"info": 0, "warning": 0, "error": 0, "critical": 0}

@@ -162,7 +162,7 @@
         }
       },
       "id": "call-codegen-agent",
-      "name": "Call CodeGen Agent (Placeholder)",
+      "name": "Call CodeGen Agent",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1480, 280]
@@ -286,7 +286,7 @@
         }
       },
       "id": "call-reviewer-agent",
-      "name": "Call Reviewer Agent (Placeholder)",
+      "name": "Call Reviewer Agent",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1480, 460]
@@ -387,14 +387,14 @@
         ],
         [
           {
-            "node": "Call CodeGen Agent (Placeholder)",
+            "node": "Call CodeGen Agent",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Call Reviewer Agent (Placeholder)",
+            "node": "Call Reviewer Agent",
             "type": "main",
             "index": 0
           }

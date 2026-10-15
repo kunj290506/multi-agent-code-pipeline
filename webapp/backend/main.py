@@ -98,7 +98,12 @@ AGENT_URLS: dict[str, str] = {
     "reviewer-agent": "http://localhost:8015/review",
 }
 
-AGENT_HTTP_CLIENT = httpx.AsyncClient(timeout=600)
+from fastapi.middleware.gzip import GZipMiddleware
+
+AGENT_HTTP_CLIENT = httpx.AsyncClient(
+    timeout=600,
+    limits=httpx.Limits(max_keepalive_connections=20, max_connections=50, keepalive_expiry=120.0),
+)
 
 # ---------------------------------------------------------------------------
 # Application
@@ -113,6 +118,7 @@ app = FastAPI(
     version="2.0.0",
 )
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

@@ -36,6 +36,14 @@ import urllib.error
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Load environment from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(ROOT, ".env"))
+    load_dotenv()
+except ImportError:
+    pass
+
 SERVICES = [
     # (label, cwd-relative-to-root, module:app, port, health-path)
     ("Planner      ", "agents/planner",  "api:app",          8010, "/health"),
@@ -62,9 +70,9 @@ YELLOW = "\033[93m"
 RESET  = "\033[0m"
 
 # How long to wait for each service to pass its health check.
-HEALTH_TIMEOUT_S: int  = int(os.getenv("LAUNCH_HEALTH_TIMEOUT", "180"))
-# Seconds between health-poll retries.
-HEALTH_POLL_INTERVAL_S: float = 1.0
+HEALTH_TIMEOUT_S: int  = int(os.getenv("LAUNCH_HEALTH_TIMEOUT", "60"))
+# Seconds between health-poll retries (fast 200ms polling).
+HEALTH_POLL_INTERVAL_S: float = 0.2
 
 RELOAD_ARGS = ["--reload"] if os.getenv("PIPELINE_RELOAD") == "1" else []
 

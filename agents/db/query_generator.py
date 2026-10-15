@@ -37,6 +37,8 @@ BLOCKED_KEYWORDS: list[str] = [
     "DROP INDEX",
     "DROP VIEW",
     "TRUNCATE",
+    "ALTER TABLE",
+    "ALTER",
     "GRANT",
     "REVOKE",
     "EXEC",

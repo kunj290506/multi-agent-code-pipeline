@@ -13,15 +13,16 @@ Endpoints:
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
+from fastapi.middleware.gzip import GZipMiddleware
+
 import config
-import ingest as ingest_module
-import query as query_module
 
 app = FastAPI(
     title="RAG Agent API",
     description="Retrieval-Augmented Generation agent for the multi-agent code pipeline.",
     version="1.0.0",
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +93,7 @@ def health_check():
 def ingest_documents(request: IngestRequest):
     """Ingest documents from the specified source directory into ChromaDB."""
     try:
+        import ingest as ingest_module
         source_dir = request.source_dir or config.DEFAULT_SOURCE_DIR
         documents = ingest_module.collect_documents(source_dir)
         if not documents:
@@ -121,6 +123,7 @@ def ingest_documents(request: IngestRequest):
 def query_documents(request: QueryRequest):
     """Answer a natural-language question using RAG."""
     try:
+        import query as query_module
         result = query_module.query(request.question, top_k=request.top_k)
         return QueryResponse(**result)
     except Exception as exc:
