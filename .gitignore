@@ -174,6 +174,7 @@ target-app/*.html
 target-app/*.css
 target-app/*.js
 target-app/*.py
+target-app/*.ico
 !target-app/app.py
 
 # -- RAG chroma store (agents/rag path) --------------------------------
