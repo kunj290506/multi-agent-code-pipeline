@@ -30,12 +30,17 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 ```
 
 | Agent | Role | Owner |
-|-------|------|-------|
-| **Planner Agent** | Orchestrates task flow, breaks user intent into subtasks, delegates to other agents | Member A |
-| **RAG Agent** | Retrieves relevant documentation snippets from Chroma vector DB | Member A |
-| **Code-Gen Agent** | Generates REST API endpoints and React components from specs | Member B |
-| **Reviewer/QA Agent** | Reviews generated code for bugs, style, and security issues | Member B |
-| **DB Agent** | Handles database migrations and query generation (shared) | Shared |
+|---|---|---|
+| **Planner Agent** | Orchestrates task flow, breaks user intent into subtasks, delegates to other agents | **Parth Patel (23AIML055)** |
+| **RAG Agent** | Retrieves relevant documentation snippets from Chroma vector DB | **Parth Patel (23AIML055)** |
+| **Code-Gen Agent** | Generates REST API endpoints and React components from specs | **Kunj Chauhan (D24AIML082)** |
+| **Reviewer/QA Agent** | Reviews generated code for bugs, style, and security issues | **Kunj Chauhan (D24AIML082)** |
+| **DB Agent** | Handles database migrations and query generation (shared) | **Joint (Parth & Kunj)** |
+
+### 📽️ Interactive 16:9 Animated Presentation Deck
+An interactive widescreen (16:9, 1920×1080) slide presentation deck with smooth animations, architecture diagrams, and keyboard navigation (`←`/`→`/`Space`/`F` for Fullscreen):
+- **Local File:** Open [`presentation/index.html`](presentation/index.html) directly in any browser.
+- **Web Server:** View at `http://localhost:8020/presentation/` when running the backend.
 
 ###  Advanced CI/CD Upgrades
 
@@ -63,17 +68,17 @@ This pipeline has been hardened into a continuous integration engine:
 
 ## Team Responsibilities
 
-### Member A
+### Parth Patel (Roll No: 23AIML055)
 - **Planner Agent**: Architecture, task decomposition logic, inter-agent communication
 - **RAG Agent**: Document ingestion pipeline, Chroma integration, embedding setup
 - **n8n Workflows**: Visual orchestration of all agent triggers and data flows
-- **Ollama Setup**: Local model deployment, model selection, inference configuration
+- **Ollama / Groq Setup**: Model deployment, prompt routing, inference configuration
 - **DB Agent** (shared): Schema design, migration strategy
 
-### Member B
+### Kunj Chauhan (Roll No: D24AIML082)
 - **Code-Gen Agent**: REST endpoint generation, React component scaffolding, prompt engineering
 - **Reviewer/QA Agent**: Static analysis integration, code quality checks, feedback loops
-- **Target App**: Sample backend + frontend application with local SQL database
+- **Target App & UI**: Sample backend + frontend application, modern WebApp IDE
 - **DB Agent** (shared): Query generation, ORM integration
 
 ---

@@ -41,6 +41,7 @@ LLM_PROVIDER=groq
 | Service | URL | Credentials |
 |---|---|---|
 | **Frontend Webapp** | http://localhost:5173 | `admin` / `admin@123` |
+| **16:9 Animated PPT Deck** | http://localhost:8020/presentation/ | None (Widescreen 1920x1080) |
 | **Backend API (Swagger)** | http://localhost:8020/docs | None |
 | **Backend Health** | http://localhost:8020/health | None |
 | **n8n Workflow Dashboard**| http://localhost:5678 | `kunjchauhan05@gmail.com` / `Kunj@1269` |

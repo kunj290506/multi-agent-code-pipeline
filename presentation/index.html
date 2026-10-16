@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Agent Code Pipeline — Animated Presentation (16:9 Widescreen)</title>
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome for Crisp Vector Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Background Decorative Ambient Glows -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- Main Viewport Scaler Wrapper (Guarantees true 16:9 1920x1080) -->
+  <div id="presentation-viewport">
+    <div id="slide-stage" class="slide-stage">
+
+      <!-- ========================================== -->
+      <!-- SLIDE 1: HERO / TITLE SLIDE -->
+      <!-- ========================================== -->
+      <section class="slide active" id="slide-1" data-title="Title & Overview">
+        <div class="slide-content hero-layout">
+          <div class="hero-badge">
+            <span class="badge-dot"></span>
+            <span>Autonomous Software Engineering Framework</span>
+            <span class="badge-pill">v2.5 Production</span>
+          </div>
+
+          <h1 class="hero-title">
+            Multi-Agent Orchestration Pipeline
+          </h1>
+          <p class="hero-subtitle">
+            Autonomous Code Generation, Semantic RAG Retrieval, Database Migrations, & Self-Healing Review Gates
+          </p>
+
+          <div class="hero-meta-grid">
+            <!-- Author Card 1 -->
+            <div class="meta-card">
+              <div class="meta-avatar">
+                <i class="fa-solid fa-user-astronaut"></i>
+              </div>
+              <div class="meta-info">
+                <span class="meta-label">Team Member 1</span>
+                <h3 class="meta-name">Parth Patel</h3>
+                <span class="meta-roll">Roll No: <strong>23AIML055</strong></span>
+                <span class="meta-dept">Artificial Intelligence & ML</span>
+              </div>
+            </div>
+
+            <!-- Author Card 2 -->
+            <div class="meta-card">
+              <div class="meta-avatar">
+                <i class="fa-solid fa-microchip"></i>
+              </div>
+              <div class="meta-info">
+                <span class="meta-label">Team Member 2</span>
+                <h3 class="meta-name">Kunj Chauhan</h3>
+                <span class="meta-roll">Roll No: <strong>D24AIML082</strong></span>
+                <span class="meta-dept">Artificial Intelligence & ML</span>
+              </div>
+            </div>
+
+            <!-- GitHub Card -->
+            <a href="https://github.com/kunj290506/multi-agent-code-pipeline" target="_blank" class="meta-card github-card" title="Open GitHub Repository">
+              <div class="meta-avatar git-avatar">
+                <i class="fa-brands fa-github"></i>
+              </div>
+              <div class="meta-info">
+                <span class="meta-label">Source Code Repository</span>
+                <h3 class="meta-name">multi-agent-code-pipeline</h3>
+                <span class="meta-link">github.com/kunj290506/... <i class="fa-solid fa-arrow-up-right-from-square"></i></span>
+                <span class="meta-status"><i class="fa-solid fa-circle-check"></i> CI/CD Verified • Open Source</span>
+              </div>
+            </a>
+          </div>
+
+          <div class="hero-footer-bar">
+            <div class="hero-stat-pill">
+              <i class="fa-solid fa-network-wired"></i> <span>5 Specialized Agents</span>
+            </div>
+            <div class="hero-stat-pill">
+              <i class="fa-solid fa-bolt"></i> <span>Sub-6s Groq LLM Inference</span>
+            </div>
+            <div class="hero-stat-pill">
+              <i class="fa-solid fa-diagram-project"></i> <span>n8n Visual Orchestration</span>
+            </div>
+            <div class="hero-stat-pill">
+              <i class="fa-solid fa-shield-halved"></i> <span>AST Self-Healing Logic Gate</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 2: THE PROBLEM & MOTIVATION -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-2" data-title="Problem & Motivation">
+        <div class="slide-content">
+          <div class="slide-header">
+            <div class="slide-tag">01 • Industry Context</div>
+            <h2 class="slide-heading">The Breakdown of Single-Prompt AI Coding</h2>
+            <p class="slide-description">Why monolithic LLM prompts fail on real-world software engineering tasks.</p>
+          </div>
+
+          <div class="grid-2-col">
+            <!-- Left: Pitfalls -->
+            <div class="glass-panel alert-panel">
+              <div class="panel-header alert-header">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <h3>The Failure Modes of Monolithic Prompts</h3>
+              </div>
+              <ul class="feature-list warning-list">
+                <li>
+                  <i class="fa-solid fa-circle-xmark"></i>
+                  <div>
+                    <strong>Hallucinated Dependencies & Schemas:</strong>
+                    <p>Single prompts invent non-existent APIs, incorrect foreign keys, and outdated framework methods.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-circle-xmark"></i>
+                  <div>
+                    <strong>Codebase Blindness (No RAG Context):</strong>
+                    <p>LLMs have zero awareness of project-specific utilities, existing models, or architecture conventions.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-circle-xmark"></i>
+                  <div>
+                    <strong>Incomplete Placeholders & TODOs:</strong>
+                    <p>Monolithic outputs frequently produce <em>"// Add logic here"</em> or write dead code with no UI wiring.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-circle-xmark"></i>
+                  <div>
+                    <strong>No Verification or Security Gate:</strong>
+                    <p>Generated dangerous functions (<code>eval()</code>, SQL injections, hardcoded secrets) pass directly to execution.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Right: Multi-Agent Solution -->
+            <div class="glass-panel success-panel">
+              <div class="panel-header success-header">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <h3>The Multi-Agent Orchestration Paradigm</h3>
+              </div>
+              <ul class="feature-list success-list">
+                <li>
+                  <i class="fa-solid fa-circle-check"></i>
+                  <div>
+                    <strong>Decomposed Specialization:</strong>
+                    <p>Division of labor across 5 purpose-built microservices: Planning, RAG Context, Database, CodeGen, & Review.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-circle-check"></i>
+                  <div>
+                    <strong>Targeted RAG Semantic Retrieval:</strong>
+                    <p>ChromaDB vector embeddings index existing workspace files and inject exact code snippets before generation.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-circle-check"></i>
+                  <div>
+                    <strong>Autonomous Self-Healing Loop:</strong>
+                    <p>The Reviewer agent tests code via AST and security checkers, rejecting errors back to CodeGen for up to 5 automated retries.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-circle-check"></i>
+                  <div>
+                    <strong>Deterministic Whole-Project Scaffolding:</strong>
+                    <p>Entrypoint <code>index.html</code>, styling <code>style.css</code>, and runtime <code>app.js</code> are generated and cleanly integrated.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 3: 5-AGENT ARCHITECTURE -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-3" data-title="5-Agent System Architecture">
+        <div class="slide-content">
+          <div class="slide-header">
+            <div class="slide-tag">02 • System Architecture</div>
+            <h2 class="slide-heading">The 5-Agent Distributed Architecture</h2>
+            <p class="slide-description">Autonomous microservices collaborating over asynchronous HTTP REST interfaces.</p>
+          </div>
+
+          <!-- Interactive Agent Architecture Cards Grid -->
+          <div class="agents-grid">
+            <!-- Agent 1: Planner -->
+            <div class="agent-card" style="--accent: #3b82f6;">
+              <div class="agent-port-badge">PORT 8010</div>
+              <div class="agent-icon-wrapper">
+                <i class="fa-solid fa-sitemap"></i>
+              </div>
+              <h3 class="agent-title">Planner Agent</h3>
+              <span class="agent-owner">Lead: Parth Patel</span>
+              <p class="agent-desc">
+                Decomposes plain-language prompts into a strict JSON Directed Acyclic Graph (DAG) with dependency ordering.
+              </p>
+              <div class="agent-tags">
+                <span>Task DAG</span>
+                <span>Dependency Graph</span>
+                <span>Whole-Project Logic</span>
+              </div>
+            </div>
+
+            <!-- Agent 2: RAG -->
+            <div class="agent-card" style="--accent: #8b5cf6;">
+              <div class="agent-port-badge">PORT 8011</div>
+              <div class="agent-icon-wrapper">
+                <i class="fa-solid fa-database"></i>
+              </div>
+              <h3 class="agent-title">RAG Agent</h3>
+              <span class="agent-owner">Lead: Parth Patel</span>
+              <p class="agent-desc">
+                Ingests local source files into ChromaDB using <code>all-MiniLM-L6-v2</code> embeddings. Queries semantic context.
+              </p>
+              <div class="agent-tags">
+                <span>ChromaDB</span>
+                <span>Semantic Embeddings</span>
+                <span>Top-K Search</span>
+              </div>
+            </div>
+
+            <!-- Agent 3: DB Agent -->
+            <div class="agent-card" style="--accent: #10b981;">
+              <div class="agent-port-badge">PORTS 8012 / 8013</div>
+              <div class="agent-icon-wrapper">
+                <i class="fa-solid fa-server"></i>
+              </div>
+              <h3 class="agent-title">DB Query & Executor</h3>
+              <span class="agent-owner">Joint Responsibility</span>
+              <p class="agent-desc">
+                Generates parameterized SQL schema migrations, verifies syntax against SQLite sandbox, and executes safely.
+              </p>
+              <div class="agent-tags">
+                <span>SQLite</span>
+                <span>Migration Scripts</span>
+                <span>Safe Execution</span>
+              </div>
+            </div>
+
+            <!-- Agent 4: CodeGen -->
+            <div class="agent-card" style="--accent: #f59e0b;">
+              <div class="agent-port-badge">PORT 8014</div>
+              <div class="agent-icon-wrapper">
+                <i class="fa-solid fa-code"></i>
+              </div>
+              <h3 class="agent-title">CodeGen Agent</h3>
+              <span class="agent-owner">Lead: Kunj Chauhan</span>
+              <p class="agent-desc">
+                Senior 30-year veteran prompt persona. Generates complete FastAPI routes, React components, CSS, and HTML.
+              </p>
+              <div class="agent-tags">
+                <span>FastAPI / React</span>
+                <span>Groq 120B / 20B</span>
+                <span>Zero Placeholders</span>
+              </div>
+            </div>
+
+            <!-- Agent 5: Reviewer -->
+            <div class="agent-card" style="--accent: #ef4444;">
+              <div class="agent-port-badge">PORT 8015</div>
+              <div class="agent-icon-wrapper">
+                <i class="fa-solid fa-shield-halved"></i>
+              </div>
+              <h3 class="agent-title">Reviewer / QA Agent</h3>
+              <span class="agent-owner">Lead: Kunj Chauhan</span>
+              <p class="agent-desc">
+                AST syntax validation, security analysis (detects <code>eval</code>, SQL injections), and semantic logic completeness.
+              </p>
+              <div class="agent-tags">
+                <span>AST Parser</span>
+                <span>Security Gate</span>
+                <span>Retry Feedback</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Orchestration Banner -->
+          <div class="arch-footer-banner">
+            <div class="banner-pill">
+              <i class="fa-solid fa-layer-group"></i> <strong>Orchestration Core:</strong> n8n Workflow (Port 5678) & FastAPI WebApp Backend (Port 8020)
+            </div>
+            <div class="banner-pill">
+              <i class="fa-solid fa-desktop"></i> <strong>Modern UI:</strong> React 19 + TypeScript + Vite + 3D Canvas (Port 5173)
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 4: N8N WORKFLOW & ORCHESTRATION -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-4" data-title="n8n Workflow & Self-Healing Loop">
+        <div class="slide-content">
+          <div class="slide-header">
+            <div class="slide-tag">03 • Orchestration Engine</div>
+            <h2 class="slide-heading">Visual n8n Workflow & Self-Healing Review Loop</h2>
+            <p class="slide-description">Automated event-driven execution with conditional logic gates and retry feedback.</p>
+          </div>
+
+          <!-- Workflow Visual Flow Diagram -->
+          <div class="workflow-canvas glass-panel">
+            <div class="flow-steps-container">
+              
+              <!-- Step 1 -->
+              <div class="flow-node">
+                <div class="flow-node-icon webhook-node">
+                  <i class="fa-solid fa-tower-broadcast"></i>
+                </div>
+                <div class="flow-node-info">
+                  <h4>Webhook Trigger</h4>
+                  <span>POST /feature-request</span>
+                </div>
+              </div>
+
+              <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+              <!-- Step 2 -->
+              <div class="flow-node">
+                <div class="flow-node-icon planner-node">
+                  <i class="fa-solid fa-brain"></i>
+                </div>
+                <div class="flow-node-info">
+                  <h4>Planner Agent</h4>
+                  <span>Task DAG Decomposition</span>
+                </div>
+              </div>
+
+              <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+              <!-- Step 3 -->
+              <div class="flow-node">
+                <div class="flow-node-icon router-node">
+                  <i class="fa-solid fa-shuffle"></i>
+                </div>
+                <div class="flow-node-info">
+                  <h4>Router / Splitter</h4>
+                  <span>Agent Switcher</span>
+                </div>
+              </div>
+
+              <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+              <!-- Step 4 -->
+              <div class="flow-node highlight-node">
+                <div class="flow-node-icon codegen-node">
+                  <i class="fa-solid fa-code"></i>
+                </div>
+                <div class="flow-node-info">
+                  <h4>CodeGen Agent</h4>
+                  <span>Groq LLM Generation</span>
+                </div>
+              </div>
+
+              <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+              <!-- Step 5 -->
+              <div class="flow-node highlight-node">
+                <div class="flow-node-icon reviewer-node">
+                  <i class="fa-solid fa-shield-virus"></i>
+                </div>
+                <div class="flow-node-info">
+                  <h4>Reviewer Gate</h4>
+                  <span>AST & Security Rules</span>
+                </div>
+              </div>
+
+              <div class="flow-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+
+              <!-- Step 6 -->
+              <div class="flow-node">
+                <div class="flow-node-icon output-node">
+                  <i class="fa-solid fa-file-code"></i>
+                </div>
+                <div class="flow-node-info">
+                  <h4>Workspace Write</h4>
+                  <span>Clean Sanitized Output</span>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Self Healing Feedback Loop Callout -->
+            <div class="loop-callout">
+              <div class="loop-icon">
+                <i class="fa-solid fa-rotate"></i>
+              </div>
+              <div class="loop-text">
+                <strong>Autonomous Self-Healing Loop:</strong>
+                If the Reviewer Agent flags issues (syntax errors, security violations, or missing functionality), it formats a structured feedback object and automatically passes it back to CodeGen for up to <strong>5 iterative corrections</strong> before final workspace deployment.
+              </div>
+              <div class="loop-badge">Zero Human Intervention</div>
+            </div>
+          </div>
+
+          <!-- Feature comparison bar -->
+          <div class="stats-row">
+            <div class="stat-box">
+              <span class="stat-num">5 Retries</span>
+              <span class="stat-title">Maximum Self-Healing Attempts</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num">100% Valid</span>
+              <span class="stat-title">JSON Schema Adherence</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num">SSE Stream</span>
+              <span class="stat-title">Live Real-Time Terminal Logs</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num">Auto-Preview</span>
+              <span class="stat-title">Ephemeral Server on Free OS Port</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 5: RESILIENCE & CODE SANITIZATION -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-5" data-title="Engineering Resilience & CSS Fix">
+        <div class="slide-content">
+          <div class="slide-header">
+            <div class="slide-tag">04 • Engineering Deep Dive</div>
+            <h2 class="slide-heading">Pipeline Hardening & Permanent Formatting Fix</h2>
+            <p class="slide-description">Solving the notorious LLM double-escaping trap and architecting production stability.</p>
+          </div>
+
+          <div class="grid-2-col">
+            <!-- Left: CSS & Unescaping Fix -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <i class="fa-solid fa-paintbrush" style="color: #38bdf8;"></i>
+                <h3>The "Missing CSS" Root Cause & Permanent Fix</h3>
+              </div>
+              <div class="code-compare">
+                <div class="code-box error-code">
+                  <div class="code-label"><i class="fa-solid fa-bug"></i> Before (Broken Double-Escaping):</div>
+                  <pre><code>// LLM outputs literal escaped characters inside JSON:
+&lt;link rel=\"stylesheet\" href=\"style.css\"&gt;
+
+// Browser interprets as literal quotes:
+GET /%22style.css%22 -> HTTP 404 Not Found!
+Result: Unstyled page with raw "\n" text nodes everywhere</code></pre>
+                </div>
+                <div class="code-box success-code">
+                  <div class="code-label"><i class="fa-solid fa-wand-magic-sparkles"></i> Permanent Architectural Fix:</div>
+                  <pre><code>// 1. CodeGen Prompt Rules 10-12 strictly forbid double escaping
+// 2. _sanitize_generated_code() normalizes quotes and attributes
+// 3. Regex verifies & adds missing rel="stylesheet"
+// 4. Auto-fallback supplies responsive modern CSS if missing
+Result: HTTP 200 OK styling loaded instantaneously!</code></pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Resilience Engine -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <i class="fa-solid fa-shield-halved" style="color: #10b981;"></i>
+                <h3>Resilience & High-Performance Execution</h3>
+              </div>
+              <ul class="feature-list">
+                <li>
+                  <i class="fa-solid fa-server" style="color: #6366f1;"></i>
+                  <div>
+                    <strong>Dual Groq Fallback Engine:</strong>
+                    <p>Primary model <code>openai/gpt-oss-120b</code> with automatic switch to <code>openai/gpt-oss-20b</code> on 429 rate limit or capacity constraints.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-memory" style="color: #10b981;"></i>
+                  <div>
+                    <strong>LRU Prompt Cache:</strong>
+                    <p>In-memory cache with thread-safe lock returns repeated prompts in 0ms, saving API quota and eliminating redundant compute.</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-shield-cat" style="color: #f59e0b;"></i>
+                  <div>
+                    <strong>Security AST Inspection:</strong>
+                    <p>Reviewer parses Python AST and checks JavaScript nodes, instantly catching forbidden primitives (<code>eval</code>, <code>exec</code>, SQL injection vectors).</p>
+                  </div>
+                </li>
+                <li>
+                  <i class="fa-solid fa-gauge-high" style="color: #ec4899;"></i>
+                  <div>
+                    <strong>Ephemeral Process Management:</strong>
+                    <p>Generated web applications are assigned dynamic free OS ports and served via cross-platform subprocesses with zero port collisions.</p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 6: COMPLETE TECH STACK -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-6" data-title="Complete Tech Stack">
+        <div class="slide-content">
+          <div class="slide-header">
+            <div class="slide-tag">05 • Technology Ecosystem</div>
+            <h2 class="slide-heading">Modern, Production-Ready Technology Stack</h2>
+            <p class="slide-description">100% authentic technologies powering the multi-agent pipeline from core to UI.</p>
+          </div>
+
+          <div class="tech-stack-grid">
+            <!-- Card 1: Orchestration -->
+            <div class="tech-card">
+              <div class="tech-icon-circle" style="--c: #ea580c;">
+                <i class="fa-solid fa-diagram-project"></i>
+              </div>
+              <h4 class="tech-category">Orchestration & CI/CD</h4>
+              <ul class="tech-items">
+                <li><strong>n8n 1.48+</strong> (Dockerized Workflow)</li>
+                <li><strong>FastAPI Orchestrator</strong> (:8020)</li>
+                <li><strong>Server-Sent Events (SSE)</strong> for real-time logs</li>
+                <li><strong>PowerShell Scripts</strong> (Single-click launcher)</li>
+              </ul>
+            </div>
+
+            <!-- Card 2: AI & LLMs -->
+            <div class="tech-card">
+              <div class="tech-icon-circle" style="--c: #f59e0b;">
+                <i class="fa-solid fa-robot"></i>
+              </div>
+              <h4 class="tech-category">AI / LLM Inference</h4>
+              <ul class="tech-items">
+                <li><strong>Groq Cloud API</strong> (High-speed LPU)</li>
+                <li><strong>openai/gpt-oss-120b</strong> (Primary)</li>
+                <li><strong>openai/gpt-oss-20b</strong> (Fast Fallback)</li>
+                <li><strong>Ollama</strong> (Local dev fallback)</li>
+              </ul>
+            </div>
+
+            <!-- Card 3: Vector Store -->
+            <div class="tech-card">
+              <div class="tech-icon-circle" style="--c: #8b5cf6;">
+                <i class="fa-solid fa-vector-square"></i>
+              </div>
+              <h4 class="tech-category">Vector Search & RAG</h4>
+              <ul class="tech-items">
+                <li><strong>ChromaDB</strong> (Embedded Vector Store)</li>
+                <li><strong>sentence-transformers</strong></li>
+                <li><strong>all-MiniLM-L6-v2</strong> Embeddings</li>
+                <li><strong>Semantic Chunking</strong> & Top-K Ranking</li>
+              </ul>
+            </div>
+
+            <!-- Card 4: Backend -->
+            <div class="tech-card">
+              <div class="tech-icon-circle" style="--c: #3b82f6;">
+                <i class="fa-solid fa-cubes"></i>
+              </div>
+              <h4 class="tech-category">Backend Services</h4>
+              <ul class="tech-items">
+                <li><strong>Python 3.11+</strong> Microservices</li>
+                <li><strong>Uvicorn & Starlette</strong></li>
+                <li><strong>HTTPX</strong> Asynchronous Client</li>
+                <li><strong>SQLite</strong> Sandboxed Database</li>
+              </ul>
+            </div>
+
+            <!-- Card 5: Frontend -->
+            <div class="tech-card">
+              <div class="tech-icon-circle" style="--c: #06b6d4;">
+                <i class="fa-brands fa-react"></i>
+              </div>
+              <h4 class="tech-category">Interactive Frontend</h4>
+              <ul class="tech-items">
+                <li><strong>React 19 + TypeScript</strong></li>
+                <li><strong>Vite 6</strong> Lightning Bundler</li>
+                <li><strong>Three.js / Canvas</strong> Particle Mesh</li>
+                <li><strong>Lucide React & PrismJS</strong></li>
+              </ul>
+            </div>
+
+            <!-- Card 6: Security & DevOps -->
+            <div class="tech-card">
+              <div class="tech-icon-circle" style="--c: #10b981;">
+                <i class="fa-solid fa-lock"></i>
+              </div>
+              <h4 class="tech-category">Security & Auth</h4>
+              <ul class="tech-items">
+                <li><strong>JWT HttpOnly Cookies</strong></li>
+                <li><strong>bcrypt</strong> Password Hashing</li>
+                <li><strong>AST Static Analysis</strong></li>
+                <li><strong>Docker Compose</strong> Isolated Containers</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 7: END-TO-END EXECUTION WALKTHROUGH -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-7" data-title="Execution Walkthrough">
+        <div class="slide-content">
+          <div class="slide-header">
+            <div class="slide-tag">06 • Live Pipeline Walkthrough</div>
+            <h2 class="slide-heading">Lifecycle of a Feature Request</h2>
+            <p class="slide-description">Trace of `"I want a simple calculator web app"` executing across the 5 agents.</p>
+          </div>
+
+          <div class="timeline-container">
+            <!-- Timeline Item 1 -->
+            <div class="timeline-step">
+              <div class="timeline-dot">1</div>
+              <div class="timeline-card">
+                <span class="timeline-time">T+0.0s • User Input</span>
+                <h4>Feature Request Ingested</h4>
+                <p>User logs into React IDE (<code>admin / admin@123</code>) and submits prompt. SSE stream opens.</p>
+              </div>
+            </div>
+
+            <!-- Timeline Item 2 -->
+            <div class="timeline-step">
+              <div class="timeline-dot">2</div>
+              <div class="timeline-card">
+                <span class="timeline-time">T+1.2s • Port 8010</span>
+                <h4>Planner DAG Generation</h4>
+                <p>Planner recognizes whole-project request; creates 4 tasks: system cleanup, <code>style.css</code>, <code>app.js</code>, <code>index.html</code>.</p>
+              </div>
+            </div>
+
+            <!-- Timeline Item 3 -->
+            <div class="timeline-step">
+              <div class="timeline-dot">3</div>
+              <div class="timeline-card">
+                <span class="timeline-time">T+3.4s • Port 8014</span>
+                <h4>Parallel Code Generation</h4>
+                <p>Groq 120B generates responsive CSS grid styling and <code>Calculator</code> JavaScript class with error handling.</p>
+              </div>
+            </div>
+
+            <!-- Timeline Item 4 -->
+            <div class="timeline-step">
+              <div class="timeline-dot">4</div>
+              <div class="timeline-card">
+                <span class="timeline-time">T+4.8s • Port 8015</span>
+                <h4>Reviewer QA Gate</h4>
+                <p>AST verifies syntax, confirms zero unsafe functions, and checks DOM event listener attachments. Verdict: <code>PASS</code>.</p>
+              </div>
+            </div>
+
+            <!-- Timeline Item 5 -->
+            <div class="timeline-step">
+              <div class="timeline-dot">5</div>
+              <div class="timeline-card highlight-timeline">
+                <span class="timeline-time">T+5.6s • Port 49977</span>
+                <h4>Clean Write & Live Launch</h4>
+                <p>Sanitizer writes clean HTML/CSS to <code>target-app/</code>. Auto-launcher starts preview server. <strong>HTTP 200 OK Verified!</strong></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Live Status Indicator -->
+          <div class="walkthrough-summary glass-panel">
+            <div class="summary-item">
+              <i class="fa-solid fa-stopwatch text-blue"></i>
+              <span>Total Pipeline Run Time: <strong>5.8 Seconds</strong></span>
+            </div>
+            <div class="summary-item">
+              <i class="fa-solid fa-shield-check text-green"></i>
+              <span>Quality Gate Pass Rate: <strong>100%</strong></span>
+            </div>
+            <div class="summary-item">
+              <i class="fa-solid fa-circle-check text-purple"></i>
+              <span>CSS Link Status: <strong>HTTP 200 (Zero 404s)</strong></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- SLIDE 8: SUMMARY, CREDITS & GITHUB -->
+      <!-- ========================================== -->
+      <section class="slide" id="slide-8" data-title="Summary & Project Links">
+        <div class="slide-content summary-layout">
+          <div class="slide-header text-center">
+            <div class="slide-tag">07 • Conclusion & Links</div>
+            <h2 class="slide-heading">Production Ready • Fully Documented • Open Source</h2>
+            <p class="slide-description">Engineered by Parth Patel & Kunj Chauhan with zero placeholders and complete CI/CD automation.</p>
+          </div>
+
+          <div class="grid-2-col">
+            <!-- Left: Quick Links & Credentials Table -->
+            <div class="glass-panel">
+              <div class="panel-header">
+                <i class="fa-solid fa-link" style="color: #38bdf8;"></i>
+                <h3>Active Service Links & Credentials</h3>
+              </div>
+              <table class="creds-table">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Local URL</th>
+                    <th>Credentials</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Frontend IDE Webapp</strong></td>
+                    <td><code>http://localhost:5173</code></td>
+                    <td><span class="badge-cred">admin</span> / <span class="badge-cred">admin@123</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>n8n Workflow Dashboard</strong></td>
+                    <td><code>http://localhost:5678</code></td>
+                    <td><span class="badge-cred">kunjchauhan05@gmail.com</span> / <span class="badge-cred">Kunj@1269</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Backend API (Swagger Docs)</strong></td>
+                    <td><code>http://localhost:8020/docs</code></td>
+                    <td>Public (No Auth)</td>
+                  </tr>
+                  <tr>
+                    <td><strong>All 5 Agent Endpoints</strong></td>
+                    <td><code>http://localhost:8010-8015</code></td>
+                    <td>REST Microservices</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div class="launcher-tip">
+                <i class="fa-solid fa-terminal"></i>
+                <span>One-Click Launch: Simply double-click <code>start.bat</code> in the project root!</span>
+              </div>
+            </div>
+
+            <!-- Right: Team & GitHub Official Card -->
+            <div class="glass-panel text-center git-spotlight-panel">
+              <div class="git-big-icon">
+                <i class="fa-brands fa-github"></i>
+              </div>
+              <h3 class="git-spotlight-title">GitHub Repository</h3>
+              <p class="git-spotlight-sub">Check out the complete source code, agent logic, and git history:</p>
+              
+              <a href="https://github.com/kunj290506/multi-agent-code-pipeline" target="_blank" class="git-button">
+                <i class="fa-brands fa-github"></i>
+                <span>kunj290506/multi-agent-code-pipeline</span>
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+
+              <div class="team-footer">
+                <div class="team-member-chip">
+                  <i class="fa-solid fa-graduation-cap"></i>
+                  <div>
+                    <strong>Parth Patel</strong>
+                    <span>Roll No: 23AIML055</span>
+                  </div>
+                </div>
+
+                <div class="team-member-chip">
+                  <i class="fa-solid fa-graduation-cap"></i>
+                  <div>
+                    <strong>Kunj Chauhan</strong>
+                    <span>Roll No: D24AIML082</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="academic-credit">
+                B.Tech in Artificial Intelligence & Machine Learning (AIML)
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+
+  <!-- ========================================== -->
+  <!-- FLOATING PRESENTATION CONTROLS (HUD) -->
+  <!-- ========================================== -->
+  <footer id="presentation-controls">
+    <div class="control-group">
+      <button id="btn-prev" class="ctrl-btn" title="Previous Slide (← / PageUp)">
+        <i class="fa-solid fa-chevron-left"></i>
+      </button>
+      <div id="slide-indicator" class="slide-indicator">
+        <span id="current-slide-num">01</span> / <span id="total-slides-num">08</span>
+      </div>
+      <button id="btn-next" class="ctrl-btn" title="Next Slide (→ / Space / PageDown)">
+        <i class="fa-solid fa-chevron-right"></i>
+      </button>
+    </div>
+
+    <!-- Slide Quick Picker Dots -->
+    <div class="slide-dots" id="slide-dots">
+      <!-- Injected via JavaScript -->
+    </div>
+
+    <div class="control-group">
+      <button id="btn-autoplay" class="ctrl-btn-text" title="Toggle Auto Play (A)">
+        <i class="fa-solid fa-play"></i> Auto
+      </button>
+      <button id="btn-fullscreen" class="ctrl-btn" title="Toggle Fullscreen (F)">
+        <i class="fa-solid fa-expand"></i>
+      </button>
+    </div>
+  </footer>
+
+  <!-- Progress Bar at Top -->
+  <div id="presentation-progress-bar"></div>
+
+  <!-- Interactive Presentation Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

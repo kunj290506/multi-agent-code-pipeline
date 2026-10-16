@@ -53,6 +53,7 @@ import auth
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
@@ -80,6 +81,10 @@ LOGS_DIR: str = os.path.abspath(
 # Project workspaces root: each named project gets its own sub-directory here.
 PROJECTS_DIR: str = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "projects")
+)
+
+PRESENTATION_DIR: str = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "presentation")
 )
 
 # Online model routing is the default so the request, not a local template,
@@ -128,6 +133,9 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+
+if os.path.isdir(PRESENTATION_DIR):
+    app.mount("/presentation", StaticFiles(directory=PRESENTATION_DIR, html=True), name="presentation")
 
 
 # ---------------------------------------------------------------------------
