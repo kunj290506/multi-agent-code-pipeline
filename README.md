@@ -37,10 +37,6 @@ This project implements a **Multi-Agent Orchestration Pipeline** that automates 
 | **Reviewer/QA Agent** | Reviews generated code for bugs, style, and security issues | **Kunj Chauhan (D24AIML082)** |
 | **DB Agent** | Handles database migrations and query generation (shared) | **Joint (Parth & Kunj)** |
 
-### 📽️ Interactive 16:9 Animated Presentation Deck
-An interactive widescreen (16:9, 1920×1080) slide presentation deck with smooth animations, architecture diagrams, and keyboard navigation (`←`/`→`/`Space`/`F` for Fullscreen):
-- **Local File:** Open [`presentation/index.html`](presentation/index.html) directly in any browser.
-- **Web Server:** View at `http://localhost:8020/presentation/` when running the backend.
 
 ###  Advanced CI/CD Upgrades
 
