@@ -56,7 +56,7 @@ if (-not $env:LLM_PROVIDER) {
     }
 }
 if (-not $env:GROQ_MODEL) {
-    $env:GROQ_MODEL = "qwen/qwen3.8-27b"
+    $env:GROQ_MODEL = "openai/gpt-oss-120b"
 }
 if (-not $env:OLLAMA_MODEL) {
     $env:OLLAMA_MODEL = "qwen2.5:7b-instruct-q4_K_M"
@@ -234,26 +234,20 @@ Write-Host "                         ALL SERVICES ARE RUNNING                   
 Write-Host "================================================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  +-------------------+--------------------------------------------------------+" -ForegroundColor Cyan
-Write-Host "  | Service           | URL                                                    |" -ForegroundColor Cyan
+Write-Host "  | Service           | URL & Credentials                                      |" -ForegroundColor Cyan
 Write-Host "  +-------------------+--------------------------------------------------------+" -ForegroundColor Cyan
-Write-Host "  | Frontend UI       | http://localhost:5173                                  |" -ForegroundColor White
-Write-Host "  | Backend Base URL  | http://localhost:8020                                  |" -ForegroundColor White
-Write-Host "  | API Docs (Swagger)| http://localhost:8020/docs                             |" -ForegroundColor White
-Write-Host "  | Health Endpoint   | http://localhost:8020/health                           |" -ForegroundColor White
-Write-Host "  | n8n Editor URL    | http://localhost:5678                                  |" -ForegroundColor White
-Write-Host "  | n8n Webhook URL   | http://localhost:5678/webhook/feature-request          |" -ForegroundColor White
-Write-Host "  | Ollama URL        | http://localhost:11434                                 |" -ForegroundColor White
+Write-Host "  | Frontend UI       | http://localhost:5173  (admin / admin@123)            |" -ForegroundColor White
+Write-Host "  | Backend API Docs  | http://localhost:8020/docs                             |" -ForegroundColor White
+Write-Host "  | Backend Health    | http://localhost:8020/health                           |" -ForegroundColor White
+Write-Host "  | n8n Editor UI     | http://localhost:5678  (kunjchauhan05@gmail.com)       |" -ForegroundColor White
+Write-Host "  | n8n Webhook       | http://localhost:5678/webhook/feature-request          |" -ForegroundColor White
 Write-Host "  +-------------------+--------------------------------------------------------+" -ForegroundColor Cyan
 Write-Host ""
 
 $urlsToOpen = @(
     "http://localhost:5173",
-    "http://localhost:8020",
     "http://localhost:8020/docs",
-    "http://localhost:8020/health",
-    "http://localhost:5678",
-    "http://localhost:5678/webhook/feature-request",
-    "http://localhost:11434"
+    "http://localhost:5678"
 )
 
 if ($chromeExe) {

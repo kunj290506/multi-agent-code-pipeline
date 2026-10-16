@@ -4,89 +4,59 @@
 
 - Python 3.11+
 - Node.js 18+
+- Docker Desktop (for n8n orchestration)
 - A Groq API key → https://console.groq.com
 
 ---
 
-## 1. Set your Groq API key
+## 1. Quick Start (Single Command)
 
-Create a `.env` file in the repo root (if not already present):
+Double-click `start.bat` or run in terminal:
 
+```cmd
+start.bat
 ```
+
+To stop all services cleanly:
+```cmd
+stop.bat
+```
+
+---
+
+## 2. Environment Setup
+
+Create or update `.env` in the repository root:
+
+```env
 GROQ_API_KEY=gsk_your_key_here
-GROQ_MODEL=qwen/qwen3.8-27b
+GROQ_MODEL=openai/gpt-oss-120b
 LLM_PROVIDER=groq
 ```
 
 ---
 
-## 2. Install dependencies
+## 3. Application Links & Credentials
 
-```powershell
-# Python deps (all agents + backend)
-pip install `
-  -r agents/planner/requirements.txt `
-  -r agents/rag/requirements.txt `
-  -r agents/codegen/requirements.txt `
-  -r agents/reviewer/requirements.txt `
-  -r agents/db/requirements.txt `
-  -r webapp/backend/requirements.txt
-
-# Frontend deps
-cd webapp/frontend
-npm install
-cd ../..
-```
+| Service | URL | Credentials |
+|---|---|---|
+| **Frontend Webapp** | http://localhost:5173 | `admin` / `admin@123` |
+| **Backend API (Swagger)** | http://localhost:8020/docs | None |
+| **Backend Health** | http://localhost:8020/health | None |
+| **n8n Workflow Dashboard**| http://localhost:5678 | `kunjchauhan05@gmail.com` / `Kunj@1269` |
+| **n8n Webhook Endpoint** | http://localhost:5678/webhook/feature-request | Basic Auth: `admin` / `changeme` |
 
 ---
 
-## 3. Start everything
+## 4. Microservice Agent Ports
 
-### Option A — Single command (recommended)
-
-```powershell
-.\scripts\start_groq.ps1
-```
-
-This starts all 7 backend services + the Vite frontend and opens the browser automatically.
-
-### Option B — Manual (two terminals)
-
-**Terminal 1 — Backend:**
-```powershell
-$env:LLM_PROVIDER="groq"
-$env:GROQ_MODEL="qwen/qwen3.8-27b"
-$env:GROQ_API_KEY="gsk_your_key_here"
-python scripts/launch_backend.py
-```
-
-**Terminal 2 — Frontend:**
-```powershell
-cd webapp/frontend
-npm run dev
-```
-
----
-
-## 4. Open the app
-
-```
-http://localhost:5173
-```
-
-Sign up / log in, type what you want to build, hit **Run Pipeline**.
-
----
-
-## Service ports (for reference)
-
-| Service        | Port  |
-|----------------|-------|
-| Planner        | 8010  |
-| RAG            | 8011  |
-| DB Query       | 8012  |
-| DB Executor    | 8013  |
-| CodeGen        | 8014  |
-| Reviewer       | 8015  |
-| Webapp Backend | 8020  |
-| Frontend UI    | 5173  |
+| Agent | Port | Swagger Docs |
+|---|---|---|
+| Planner Agent | 8010 | http://localhost:8010/docs |
+| RAG Agent | 8011 | http://localhost:8011/docs |
+| DB Query Agent | 8012 | http://localhost:8012/docs |
+| DB Executor | 8013 | http://localhost:8013/docs |
+| CodeGen Agent | 8014 | http://localhost:8014/docs |
+| Reviewer Agent | 8015 | http://localhost:8015/docs |
+| Webapp Backend | 8020 | http://localhost:8020/docs |
+| Frontend UI | 5173 | http://localhost:5173 |

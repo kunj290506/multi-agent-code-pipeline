@@ -44,6 +44,10 @@ try:
 except ImportError:
     pass
 
+if not os.getenv("LLM_PROVIDER"):
+    os.environ["LLM_PROVIDER"] = "groq"
+if not os.getenv("GROQ_MODEL"):
+    os.environ["GROQ_MODEL"] = "openai/gpt-oss-120b"
 SERVICES = [
     # (label, cwd-relative-to-root, module:app, port, health-path)
     ("Planner      ", "agents/planner",  "api:app",          8010, "/health"),
@@ -233,6 +237,7 @@ def start_all() -> None:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=os.environ.copy(),
         )
         procs.append(proc)
         print(f"  {_tag(label)}  starting (pid {proc.pid}) on :{port}…", end="", flush=True)

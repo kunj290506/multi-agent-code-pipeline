@@ -1,25 +1,29 @@
 """
 Shared LLM dispatch layer — Groq-first.
 
-Default backend is Groq (qwen/qwen3.8-27b).
+Default backend is Groq (openai/gpt-oss-120b).
 Set LLM_PROVIDER=ollama to use a local Ollama server instead.
 
 Environment variables
 ---------------------
 LLM_PROVIDER   : "groq" (default) | "ollama"
 GROQ_API_KEY   : Groq API key (required for groq provider)
-GROQ_MODEL     : Groq model id  (default: qwen/qwen3.8-27b)
+GROQ_MODEL     : Groq model id  (default: openai/gpt-oss-120b)
 OLLAMA_BASE_URL: Ollama server  (default: http://localhost:11434)
-OLLAMA_MODEL   : Ollama model   (default: qwen3-coder:latest)
+OLLAMA_MODEL   : Ollama model   (default: qwen2.5:7b-instruct-q4_K_M)
 """
 
 from __future__ import annotations
 
+import collections
 import os
+import threading
 import time
 from pathlib import Path
-import concurrent.futures
 from typing import Any
+
+import requests
+from requests.adapters import HTTPAdapter
 
 try:
     from dotenv import load_dotenv
@@ -33,15 +37,10 @@ except ImportError:
 # Configuration — read from environment
 # ---------------------------------------------------------------------------
 
-import threading
-import collections
-import requests
-from requests.adapters import HTTPAdapter
-
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq" if os.getenv("GROQ_API_KEY") else "ollama").lower()
 
 GROQ_API_KEY: str  = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL: str    = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+GROQ_MODEL: str    = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 OLLAMA_BASE_URL: str   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str      = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct-q4_K_M")
@@ -98,48 +97,60 @@ def call_groq(
     max_tokens: int = 4096,
     timeout: int = 120,
 ) -> LLMResult:
-    """Send a prompt to the Groq chat-completions API."""
+    """Send a prompt to the Groq chat-completions API with automatic model fallback."""
     global _groq_client
     if _groq_client is None:
         from groq import Groq  # lazy import — not needed for Ollama-only runs
-        if not GROQ_API_KEY:
+        api_key = os.getenv("GROQ_API_KEY") or GROQ_API_KEY
+        if not api_key:
             raise RuntimeError(
                 "GROQ_API_KEY is not set. "
                 "Export it in your environment before starting the services."
             )
-        _groq_client = Groq(api_key=GROQ_API_KEY, timeout=timeout)
+        _groq_client = Groq(api_key=api_key, timeout=timeout)
 
-    # Use a faster default model if the placeholder is still used
-    _model = model or GROQ_MODEL
-
-    # Groq free tier has a 1000 OTPM (output tokens per minute) limit on qwen3.8
-    # Clamping expected max_tokens prevents 429 rate limit errors
-    _max_tokens = min(max_tokens, 950) if "qwen" in _model.lower() else max_tokens
+    _model = model or os.getenv("GROQ_MODEL") or GROQ_MODEL
 
     from groq import RateLimitError, InternalServerError
     t0 = time.monotonic()
-    
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            response = _groq_client.chat.completions.create(
-                model=_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=_max_tokens,
-            )
-            break
-        except (RateLimitError, InternalServerError) as e:
-            if attempt == max_retries - 1:
-                raise
-            # Exponential backoff: 2s, 4s, 8s, 16s...
-            sleep_time = 2 ** attempt * 2
-            print(f"[WARN] Groq rate limit/server error on attempt {attempt+1}. Retrying in {sleep_time}s... Error: {e}")
-            time.sleep(sleep_time)
 
-    duration_ms = int((time.monotonic() - t0) * 1000)
-    text = response.choices[0].message.content or ""
-    return LLMResult(text=text, provider="groq", model=_model, duration_ms=duration_ms)
+    # Priority list of models to try
+    models_to_try = [_model]
+    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+        if fallback not in models_to_try:
+            models_to_try.append(fallback)
+
+    last_error = None
+    for current_model in models_to_try:
+        # qwen3.8-27b has a 1000 OTPM limit on Groq's on-demand free tier
+        cur_tokens = min(max_tokens, 950) if "qwen" in current_model else max_tokens
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = _groq_client.chat.completions.create(
+                    model=current_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=cur_tokens,
+                )
+                duration_ms = int((time.monotonic() - t0) * 1000)
+                text = response.choices[0].message.content or ""
+                return LLMResult(text=text, provider="groq", model=current_model, duration_ms=duration_ms)
+            except (RateLimitError, InternalServerError) as e:
+                last_error = e
+                print(f"[WARN] Groq {current_model} issue (attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    sleep_time = 2 ** attempt * 2
+                    time.sleep(sleep_time)
+                else:
+                    print(f"[INFO] Moving to fallback Groq model after {current_model}...")
+                    break
+            except Exception as e:
+                last_error = e
+                print(f"[ERROR] Groq call failed with {current_model}: {e}")
+                break
+
+    raise RuntimeError(f"All Groq models failed: {last_error}")
 
 
 # ---------------------------------------------------------------------------
@@ -195,12 +206,11 @@ def call_llm(
     context_size: int | None = None,
     timeout: int = 600,
 ) -> LLMResult:
-    """Route to the correct backend with in-memory caching and hedged requests."""
+    """Route to the correct backend with in-memory caching."""
     cache_key = (prompt, str(model or ""), float(temperature))
     with _CACHE_LOCK:
         if cache_key in _PROMPT_CACHE:
             cached = _PROMPT_CACHE[cache_key]
-            # Return cached result with 0ms duration
             return LLMResult(
                 text=cached.text,
                 provider=cached.provider,
@@ -237,53 +247,36 @@ def _call_llm_internal(
     context_size: int | None = None,
     timeout: int = 600,
 ) -> LLMResult:
-    """Dispatch to Groq or Ollama using Concurrent Hedged Requests."""
-    _provider = (provider or LLM_PROVIDER).lower()
-    
-    if _provider != "groq":
-        return call_ollama(
-            prompt,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            context_size=context_size,
-            timeout=timeout,
-        )
+    """Dispatch to Groq (primary) or Ollama (if configured or explicitly requested)."""
+    _provider = (provider or os.getenv("LLM_PROVIDER") or LLM_PROVIDER).lower()
 
-    # Hedged Request Logic
-    def run_groq():
-        res = call_groq(prompt, model=model, temperature=temperature, max_tokens=max_tokens, timeout=min(timeout, 120))
-        if not res.text.strip():
-            raise ValueError("Empty response from Groq")
-        return res
+    if _provider == "groq":
+        try:
+            return call_groq(
+                prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=min(timeout, 120),
+            )
+        except Exception as groq_err:
+            if os.getenv("ENABLE_OLLAMA_FALLBACK", "0") == "1":
+                print(f"[WARN] Groq failed ({groq_err}), attempting Ollama fallback...")
+                return call_ollama(
+                    prompt,
+                    model=None,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    context_size=context_size,
+                    timeout=timeout,
+                )
+            raise
 
-    def run_ollama():
-        res = call_ollama(prompt, model=None, temperature=temperature, max_tokens=max_tokens, context_size=context_size, timeout=timeout)
-        if not res.text.strip():
-            raise ValueError("Empty response from Ollama")
-        return res
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_groq = executor.submit(run_groq)
-        future_ollama = executor.submit(run_ollama)
-
-        futures = [future_groq, future_ollama]
-        errors = {}
-        
-        while futures:
-            done, not_done = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
-            
-            for future in done:
-                try:
-                    result = future.result()
-                    return result  # First successful result wins
-                except Exception as e:
-                    name = "Groq" if future == future_groq else "Ollama"
-                    errors[name] = e
-                    print(f"[WARN] Hedged LLM task ({name}) failed: {e}")
-                    
-            futures = list(not_done)
-            
-    # If both fail, raise an error detailing what went wrong
-    print(f"[ERROR] Both hedged LLM tasks failed. Groq: {errors.get('Groq')} | Ollama: {errors.get('Ollama')}")
-    raise RuntimeError(f"All LLM backends failed. Groq error: {errors.get('Groq')}. Ollama error: {errors.get('Ollama')}")
+    return call_ollama(
+        prompt,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        context_size=context_size,
+        timeout=timeout,
+    )

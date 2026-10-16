@@ -114,7 +114,7 @@ Rules:
 7. SINGLE-FEATURE REQUESTS (adding to an existing project): use rag-agent first if helpful,
    then codegen-agent (one subtask per file changed), then db-agent only if needed.
 8. Always include a "reasoning" field in the top-level response explaining your decomposition.
-9. Keep descriptions concise but actionable. For whole-project requests, ensure that the description for the main entrypoint file (like index.html) explicitly states which other files (like style.css or script.js) it must link/import, and set the dependency array so the entrypoint is generated LAST.
+9. Keep descriptions concise but actionable. For whole-project requests, ensure that the description for the main entrypoint file (like index.html) explicitly states which other files (like style.css or script.js) it must link/import using standard <link rel="stylesheet" href="style.css"> and <script src="script.js"></script>, and set the dependency array so the entrypoint is generated LAST.
 
 Output schema:
 {
@@ -286,14 +286,14 @@ def decompose(feature_request: str, max_retries: int = 2, file_manifest=None, st
         else:
             prompt_with_correction = prompt
 
-        provider = os.getenv("LLM_PROVIDER", "ollama")
+        provider = os.getenv("LLM_PROVIDER", "groq")
         print(f"[INFO] Attempt {attempt + 1}: requesting plan via {provider}...")
         planner_model = config.GROQ_MODEL
         if _is_whole_project_request(feature_request):
             planner_model = config.GROQ_WHOLE_PROJECT_MODEL
         llm_result = call_llm(
             prompt_with_correction,
-            model=planner_model if os.getenv("LLM_PROVIDER", "ollama").lower() == "groq" else None,
+            model=planner_model if os.getenv("LLM_PROVIDER", "groq").lower() == "groq" else None,
             temperature=config.TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             context_size=config.OLLAMA_CONTEXT_SIZE,
@@ -365,7 +365,7 @@ def decompose_offline(feature_request: str, file_manifest=None, structural_map=N
                 {
                     "task_id": "task_4",
                     "agent": "codegen-agent",
-                    "description": "Generate index.html for a simple calculator app with buttons for 0-9, +, -, *, /, =, C and a display. Must include <link href='style.css'> and <script src='script.js'>.",
+                    "description": "Generate index.html for a simple calculator app with buttons for 0-9, +, -, *, /, =, C and a display. Must include <link rel=\"stylesheet\" href=\"style.css\"> and <script src=\"script.js\"></script>.",
                     "dependencies": ["task_2", "task_3"],
                     "target_filename": "index.html",
                 },
@@ -403,7 +403,7 @@ def decompose_offline(feature_request: str, file_manifest=None, structural_map=N
                 {
                     "task_id": "task_4",
                     "agent": "codegen-agent",
-                    "description": "Generate index.html for perfcat webapp. Must include <link href='style.css'> and <script src='script.js'>.",
+                    "description": "Generate index.html for perfcat webapp. Must include <link rel=\"stylesheet\" href=\"style.css\"> and <script src=\"script.js\"></script>.",
                     "dependencies": ["task_2", "task_3"],
                     "target_filename": "index.html",
                 },
@@ -473,7 +473,7 @@ def decompose_offline(feature_request: str, file_manifest=None, structural_map=N
                 {
                     "task_id": "task_4",
                     "agent": "codegen-agent",
-                    "description": f"Generate index.html — the main HTML structure for: {app_name}. Must include <link href='style.css'> and <script src='script.js'>.",
+                    "description": f"Generate index.html — the main HTML structure for: {app_name}. Must include <link rel=\"stylesheet\" href=\"style.css\"> and <script src=\"script.js\"></script>.",
                     "dependencies": ["task_2", "task_3"],
                     "target_filename": "index.html",
                 },
