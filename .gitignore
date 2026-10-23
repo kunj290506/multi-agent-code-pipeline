@@ -182,3 +182,6 @@ agents/rag/.chroma_store/
 
 # -- Eval benchmark output CSVs ----------------------------------------
 eval/results_*.csv
+
+# Process tracking
+.pids.json
