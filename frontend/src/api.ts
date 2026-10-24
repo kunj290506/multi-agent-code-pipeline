@@ -188,6 +188,12 @@ export async function fetchFileTree(workspacePath?: string): Promise<FileTreeNod
   return data.tree || [];
 }
 
+export async function clearWorkspace(workspacePath?: string): Promise<boolean> {
+  const url = workspacePath ? `${API_BASE}/workspace/clear?workspace_path=${encodeURIComponent(workspacePath)}` : `${API_BASE}/workspace/clear`;
+  const res = await authFetch(url, { method: 'POST' });
+  return res.ok;
+}
+
 export async function readFile(path: string, workspacePath?: string): Promise<string> {
   const url = `${API_BASE}/files?path=${encodeURIComponent(path)}` + (workspacePath ? `&workspace_path=${encodeURIComponent(workspacePath)}` : '');
   const res = await authFetch(url);

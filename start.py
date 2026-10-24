@@ -131,6 +131,7 @@ def start():
 
     # 3. n8n check / start
     n8n_running = is_port_in_use(5678)
+    use_docker = os.environ.get("USE_DOCKER_N8N", "true").lower() in ("true", "1")
     if not n8n_running and shutil.which("docker"):
         try:
             dock_check = subprocess.run(["docker", "info"], capture_output=True, timeout=3)
@@ -146,8 +147,7 @@ def start():
         except Exception:
             pass
 
-    # Fallback to local standalone n8n workflow engine
-    if not n8n_running:
+    if not n8n_running and not use_docker:
         print("Starting local n8n workflow engine (:5678)...")
         n8n_script = os.path.join(ROOT, "backend", "n8n_server.py")
         n8n_proc = subprocess.Popen([sys.executable, n8n_script], cwd=ROOT)
@@ -158,6 +158,8 @@ def start():
                 print("  n8n local workflow engine is ready (:5678).")
                 n8n_running = True
                 break
+    elif not n8n_running:
+        print("  Port :5678 is FREE and ready for Docker n8n.")
     else:
         print("  n8n is active on port :5678.")
 

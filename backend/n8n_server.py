@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 import uvicorn
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] n8n-server: %(message)s")
@@ -55,13 +55,14 @@ def load_local_workflows():
                         "name": name,
                         "active": wf.get("active", True),
                         "nodes": wf.get("nodes", []),
+                        "connections": wf.get("connections", {}),
                     }
             except Exception as e:
                 logger.warning(f"Error loading {wf_file}: {e}")
     # Ensure standard workflows exist
     for std in ("notify", "run-tests", "summarize-changes"):
         if std not in WORKFLOWS:
-            WORKFLOWS[std] = {"id": std, "name": std, "active": True}
+            WORKFLOWS[std] = {"id": std, "name": std, "active": True, "nodes": [], "connections": {}}
 
 
 load_local_workflows()
@@ -74,7 +75,16 @@ async def healthz():
 
 
 @app.get("/")
-async def root():
+async def root(req: Request):
+    accept = req.headers.get("accept", "")
+    if "text/html" in accept:
+        canvas_path = Path(__file__).resolve().parent / "n8n_canvas.html"
+        if canvas_path.exists():
+            with open(canvas_path, "r", encoding="utf-8") as f:
+                template = f.read()
+            html_content = template.replace("__WORKFLOWS_JSON__", json.dumps(WORKFLOWS))
+            return HTMLResponse(content=html_content)
+
     return {
         "status": "ok",
         "name": "n8n",

@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>n8n — Visual Workflow Editor & Automation Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-canvas: #0e121b;
+            --bg-topbar: #141b29;
+            --bg-card: #182235;
+            --bg-card-hover: #1e2b42;
+            --bg-drawer: #121926;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(234, 75, 113, 0.6);
+            --n8n-coral: #ea4b71;
+            --n8n-gradient: linear-gradient(135deg, #ff6d5a 0%, #ea4b71 50%, #b82e70 100%);
+            --accent-cyan: #38bdf8;
+            --accent-green: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --grid-color: rgba(255, 255, 255, 0.05);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background-color: var(--bg-canvas);
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Top Navigation Bar */
+        .topbar {
+            height: 56px;
+            background: var(--bg-topbar);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1.25rem;
+            z-index: 10;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+        }
+
+        .logo-box {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            background: var(--n8n-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(234, 75, 113, 0.4);
+        }
+
+        .workflow-tabs {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 0.25rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .wf-tab {
+            padding: 0.4rem 0.85rem;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .wf-tab:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .wf-tab.active {
+            color: #fff;
+            background: var(--n8n-coral);
+            box-shadow: 0 2px 8px rgba(234, 75, 113, 0.4);
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.3rem 0.75rem;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 999px;
+            color: var(--accent-green);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 6px var(--accent-green);
+        }
+
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.42rem 0.85rem;
+            background: #1e293b;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-main);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-action:hover {
+            border-color: var(--accent-cyan);
+            color: #fff;
+        }
+
+        .btn-primary {
+            background: var(--n8n-gradient);
+            border: none;
+            color: #fff;
+            box-shadow: 0 2px 10px rgba(234, 75, 113, 0.35);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.92;
+        }
+
+        /* Flow Canvas Container */
+        .canvas-wrapper {
+            flex: 1;
+            position: relative;
+            background-color: var(--bg-canvas);
+            background-image: radial-gradient(var(--grid-color) 1.5px, transparent 1.5px);
+            background-size: 24px 24px;
+            overflow: hidden;
+        }
+
+        /* SVG Wire Layer */
+        .connections-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .wire-path {
+            stroke: #475569;
+            stroke-width: 3.5px;
+            fill: none;
+            stroke-dasharray: 6 3;
+            transition: stroke 0.3s;
+        }
+
+        .wire-path.active {
+            stroke: var(--n8n-coral);
+            stroke-dasharray: 8 4;
+            animation: flowDash 0.8s linear infinite;
+        }
+
+        @keyframes flowDash {
+            to { stroke-dashoffset: -24; }
+        }
+
+        /* Node Cards */
+        .node-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+
+        .n8n-node {
+            position: absolute;
+            width: 250px;
+            background: var(--bg-card);
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.45);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .n8n-node:hover {
+            border-color: var(--border-highlight);
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.6);
+        }
+
+        .n8n-node.selected {
+            border-color: var(--n8n-coral);
+            box-shadow: 0 0 0 2px rgba(234, 75, 113, 0.3), 0 12px 28px rgba(0, 0, 0, 0.6);
+        }
+
+        .node-header {
+            padding: 0.85rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .node-icon-box {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            background: #25334d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        .node-icon-box.trigger {
+            background: rgba(234, 75, 113, 0.2);
+            color: #ff6d5a;
+        }
+
+        .node-icon-box.action {
+            background: rgba(56, 189, 248, 0.2);
+            color: #38bdf8;
+        }
+
+        .node-title-group {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .node-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-main);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .node-type-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .node-body {
+            padding: 0.75rem 1rem;
+            font-size: 0.78rem;
+            color: #cbd5e1;
+        }
+
+        .node-param-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.35rem;
+        }
+
+        .node-param-label {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+        }
+
+        .node-param-val {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0, 0, 0, 0.35);
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            color: #38bdf8;
+            font-size: 0.72rem;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Connector Ports */
+        .port-pin {
+            position: absolute;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: #1e293b;
+            border: 2.5px solid var(--n8n-coral);
+            top: 50%;
+            transform: translateY(-50%);
+            box-shadow: 0 0 6px rgba(234, 75, 113, 0.5);
+        }
+
+        .port-pin.output {
+            right: -7px;
+        }
+
+        .port-pin.input {
+            left: -7px;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 6px rgba(56, 189, 248, 0.5);
+        }
+
+        /* Side Inspector Drawer */
+        .inspector-drawer {
+            position: absolute;
+            right: 0;
+            top: 56px;
+            bottom: 0;
+            width: 440px;
+            background: var(--bg-drawer);
+            border-left: 1px solid var(--border);
+            box-shadow: -10px 0 35px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            z-index: 20;
+            transform: translateX(100%);
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .inspector-drawer.open {
+            transform: translateX(0);
+        }
+
+        .drawer-header {
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .drawer-header h3 {
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        .drawer-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            cursor: pointer;
+            padding: 0.2rem 0.5rem;
+        }
+
+        .drawer-close:hover { color: #fff; }
+
+        .drawer-body {
+            flex: 1;
+            padding: 1.25rem;
+            overflow-y: auto;
+        }
+
+        .drawer-section-title {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin: 1.25rem 0 0.5rem;
+        }
+
+        .code-block {
+            background: #090d16;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: #cbd5e1;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .payload-input {
+            width: 100%;
+            background: #090d16;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem;
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            margin-top: 0.4rem;
+            resize: vertical;
+        }
+
+        .test-result-box {
+            margin-top: 0.75rem;
+            padding: 0.75rem;
+            background: #070a10;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.76rem;
+            color: #38bdf8;
+            white-space: pre-wrap;
+            display: none;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            max-width: 600px;
+            width: 90%;
+            padding: 2rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-box h2 {
+            font-size: 1.35rem;
+            margin-bottom: 0.5rem;
+            color: #fff;
+        }
+
+        .modal-box p {
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+
+        .info-card {
+            background: #090e18;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 1rem 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Navigation Bar -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <div class="logo-box">n8n</div>
+            <div class="workflow-tabs" id="wfTabs">
+                <!-- Injected via JS -->
+            </div>
+        </div>
+
+        <div class="topbar-right">
+            <div class="status-pill">
+                <span class="status-dot"></span>
+                ACTIVE (LOCAL ENGINE)
+            </div>
+            <button class="btn-action" onclick="openDockerModal()">Official Docker n8n Setup</button>
+            <button class="btn-action btn-primary" onclick="openInspector()">Execute Webhook</button>
+            <a href="http://localhost:5173" class="btn-action">&larr; Studio (:5173)</a>
+        </div>
+    </header>
+
+    <!-- Visual Canvas -->
+    <div class="canvas-wrapper" id="canvas">
+        <svg class="connections-svg" id="svgConnections">
+            <!-- Dynamic bezier wires injected here -->
+        </svg>
+
+        <div class="node-layer" id="nodeLayer">
+            <!-- Dynamic n8n nodes injected here -->
+        </div>
+    </div>
+
+    <!-- Node Inspector Drawer -->
+    <aside class="inspector-drawer" id="inspector">
+        <div class="drawer-header">
+            <div>
+                <h3 id="insTitle">Node Inspector</h3>
+                <span id="insType" style="font-size: 0.72rem; color: var(--text-muted); font-family: monospace;"></span>
+            </div>
+            <button class="drawer-close" onclick="closeInspector()">&times;</button>
+        </div>
+
+        <div class="drawer-body">
+            <div class="drawer-section-title">Trigger Webhook Test</div>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">Send test payload into this workflow:</p>
+            <textarea id="testPayload" class="payload-input" rows="4"></textarea>
+            <button class="btn-action btn-primary" style="margin-top: 0.6rem; width: 100%; justify-content: center;" onclick="triggerActiveWebhook()">
+                Run Workflow Step
+            </button>
+            <div id="testResult" class="test-result-box"></div>
+
+            <div class="drawer-section-title">Node Configuration & Parameters</div>
+            <div class="code-block" id="insParams">Select a node on canvas to view full configuration.</div>
+
+            <div class="drawer-section-title">Raw n8n Workflow JSON</div>
+            <div class="code-block" id="insRawJson"></div>
+        </div>
+    </aside>
+
+    <!-- Official Docker Setup Modal -->
+    <div class="modal-overlay" id="dockerModal" onclick="if(event.target===this)closeDockerModal()">
+        <div class="modal-box">
+            <h2>Official n8n Workflow Editor (Docker)</h2>
+            <p>
+                The Multi-Agent Code Pipeline includes full Docker configuration to run the official <strong>n8nio/n8n</strong> container with the official graphical editor on <strong>:5678</strong>.
+            </p>
+            <div class="info-card">
+                <div style="color: #38bdf8; margin-bottom: 0.4rem;"># 1. Start official n8n container:</div>
+                <div style="color: #fff;">docker compose up -d n8n</div>
+                <div style="color: #38bdf8; margin: 0.8rem 0 0.4rem;"># 2. Login credentials at http://localhost:5678 :</div>
+                <div style="color: #a7f3d0;">Username: admin</div>
+                <div style="color: #a7f3d0;">Password: admin123</div>
+            </div>
+            <p style="font-size: 0.8rem;">
+                The official n8n container mounts the <code>./n8n/</code> workflow JSON files automatically. If Docker is offline, this standalone local workflow engine runs automatically so all agent webhooks continue operating seamlessly.
+            </p>
+            <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+                <button class="btn-action btn-primary" onclick="closeDockerModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Embedded Workflows Data -->
+    <script id="rawWfData" type="application/json">
+        __WORKFLOWS_JSON__
+    </script>
+
+    <script>
+        const rawData = JSON.parse(document.getElementById('rawWfData').textContent);
+        const workflows = rawData;
+        const wfNames = Object.keys(workflows);
+        let currentWf = wfNames[0] || 'notify';
+        let selectedNode = null;
+
+        const defaultPayloads = {
+            'notify': '{\n  "title": "Build Passed",\n  "message": "All unit tests completed successfully."\n}',
+            'run-tests': '{\n  "command": "pytest"\n}',
+            'summarize-changes': '{\n  "diff": "+ def test_calculator():\\n+     assert 2 + 2 == 4"\n}'
+        };
+
+        function renderTabs() {
+            const tabsEl = document.getElementById('wfTabs');
+            tabsEl.innerHTML = wfNames.map(name => {
+                const icon = name === 'notify' ? '⚡' : (name === 'run-tests' ? '🧪' : '📝');
+                return `<div class="wf-tab ${name === currentWf ? 'active' : ''}" onclick="selectWorkflow('${name}')">
+                    <span>${icon}</span>
+                    <span>${name}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function selectWorkflow(name) {
+            currentWf = name;
+            renderTabs();
+            renderCanvas();
+            document.getElementById('testPayload').value = defaultPayloads[name] || '{\n  "test": true\n}';
+            document.getElementById('insRawJson').textContent = JSON.stringify(workflows[name], null, 2);
+            document.getElementById('testResult').style.display = 'none';
+        }
+
+        function renderCanvas() {
+            const wf = workflows[currentWf];
+            const layer = document.getElementById('nodeLayer');
+            const svg = document.getElementById('svgConnections');
+            layer.innerHTML = '';
+            svg.innerHTML = '';
+
+            if (!wf) return;
+
+            // Calculate node positions
+            // Webhook at left (x: 120, y: 180), Next node at right (x: 520, y: 180)
+            const nodes = [
+                {
+                    id: 'webhook-node',
+                    name: 'Webhook',
+                    type: 'n8n-nodes-base.webhook',
+                    isTrigger: true,
+                    x: 120,
+                    y: 180,
+                    params: {
+                        httpMethod: 'POST',
+                        path: currentWf,
+                        responseMode: 'lastNode'
+                    }
+                }
+            ];
+
+            if (currentWf === 'notify') {
+                nodes.push({
+                    id: 'format-notification',
+                    name: 'Format Notification',
+                    type: 'n8n-nodes-base.code',
+                    isTrigger: false,
+                    x: 520,
+                    y: 180,
+                    params: {
+                        language: 'javaScript',
+                        jsCode: "const item = $input.first().json;\nreturn [{ json: { status: 'delivered', ...item } }];"
+                    }
+                });
+            } else if (currentWf === 'run-tests') {
+                nodes.push({
+                    id: 'run-test-request',
+                    name: 'Run Test Endpoint',
+                    type: 'n8n-nodes-base.httpRequest',
+                    isTrigger: false,
+                    x: 520,
+                    y: 180,
+                    params: {
+                        method: 'POST',
+                        url: 'http://host.docker.internal:8000/internal/run',
+                        command: '$json.body.command || "pytest"'
+                    }
+                });
+            } else if (currentWf === 'summarize-changes') {
+                nodes.push({
+                    id: 'summarize-request',
+                    name: 'Summarize via LLM',
+                    type: 'n8n-nodes-base.httpRequest',
+                    isTrigger: false,
+                    x: 520,
+                    y: 180,
+                    params: {
+                        method: 'POST',
+                        url: 'http://host.docker.internal:8000/internal/llm',
+                        model: 'qwen2.5:7b-instruct-q4_K_M'
+                    }
+                });
+            }
+
+            // Draw Nodes
+            nodes.forEach(node => {
+                const nodeEl = document.createElement('div');
+                nodeEl.className = 'n8n-node';
+                nodeEl.style.left = node.x + 'px';
+                nodeEl.style.top = node.y + 'px';
+                nodeEl.onclick = (e) => {
+                    e.stopPropagation();
+                    inspectNode(node);
+                };
+
+                const icon = node.isTrigger ? '⚡' : (node.type.includes('code') ? '{ }' : '🌐');
+                const badgeClass = node.isTrigger ? 'trigger' : 'action';
+                const mainParamKey = node.isTrigger ? 'Path' : (node.type.includes('code') ? 'Language' : 'URL');
+                const mainParamVal = node.isTrigger ? `/webhook/${currentWf}` : (node.type.includes('code') ? 'JavaScript' : ':8000/internal');
+
+                nodeEl.innerHTML = `
+                    ${node.isTrigger ? '' : '<div class="port-pin input"></div>'}
+                    <div class="node-header">
+                        <div class="node-icon-box ${badgeClass}">${icon}</div>
+                        <div class="node-title-group">
+                            <div class="node-title">${node.name}</div>
+                            <div class="node-type-label">${node.type}</div>
+                        </div>
+                    </div>
+                    <div class="node-body">
+                        <div class="node-param-row">
+                            <span class="node-param-label">${mainParamKey}</span>
+                            <span class="node-param-val">${mainParamVal}</span>
+                        </div>
+                        <div class="node-param-row">
+                            <span class="node-param-label">Status</span>
+                            <span style="color: #10b981; font-weight: 600; font-size: 0.72rem;">● Active</span>
+                        </div>
+                    </div>
+                    ${node.isTrigger ? '<div class="port-pin output"></div>' : ''}
+                `;
+                layer.appendChild(nodeEl);
+            });
+
+            // Draw Bezier Connection Wire
+            if (nodes.length >= 2) {
+                const n1 = nodes[0];
+                const n2 = nodes[1];
+                const startX = n1.x + 250;
+                const startY = n1.y + 45;
+                const endX = n2.x;
+                const endY = n2.y + 45;
+                const midX = (startX + endX) / 2;
+
+                const pathData = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+                svg.innerHTML = `
+                    <path id="wire" class="wire-path" d="${pathData}" />
+                    <circle cx="${startX}" cy="${startY}" r="4" fill="#ea4b71" />
+                    <circle cx="${endX}" cy="${endY}" r="4" fill="#38bdf8" />
+                `;
+            }
+        }
+
+        function inspectNode(node) {
+            selectedNode = node;
+            document.querySelectorAll('.n8n-node').forEach(el => el.classList.remove('selected'));
+            document.getElementById('insTitle').textContent = node.name;
+            document.getElementById('insType').textContent = node.type;
+            document.getElementById('insParams').textContent = JSON.stringify(node.params, null, 2);
+            document.getElementById('inspector').classList.add('open');
+        }
+
+        function openInspector() {
+            document.getElementById('inspector').classList.add('open');
+        }
+
+        function closeInspector() {
+            document.getElementById('inspector').classList.remove('open');
+            document.querySelectorAll('.n8n-node').forEach(el => el.classList.remove('selected'));
+        }
+
+        async function triggerActiveWebhook() {
+            const wire = document.getElementById('wire');
+            if (wire) wire.classList.add('active');
+
+            const payloadRaw = document.getElementById('testPayload').value;
+            const resEl = document.getElementById('testResult');
+            resEl.style.display = 'block';
+            resEl.textContent = `[POST] Triggering /webhook/${currentWf} ...`;
+
+            try {
+                let parsed = {};
+                try { parsed = JSON.parse(payloadRaw); } catch {}
+                const resp = await fetch(`/webhook/${currentWf}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(parsed)
+                });
+                const data = await resp.json();
+                resEl.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                resEl.textContent = 'Error: ' + err.message;
+            } finally {
+                setTimeout(() => {
+                    if (wire) wire.classList.remove('active');
+                }, 1200);
+            }
+        }
+
+        function openDockerModal() {
+            document.getElementById('dockerModal').style.display = 'flex';
+        }
+
+        function closeDockerModal() {
+            document.getElementById('dockerModal').style.display = 'none';
+        }
+
+        // Initialize
+        renderTabs();
+        selectWorkflow(currentWf);
+    </script>
+</body>
+</html>

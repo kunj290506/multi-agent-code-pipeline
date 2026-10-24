@@ -185,3 +185,12 @@ eval/results_*.csv
 
 # Process tracking
 .pids.json
+
+# -- Generated workspace files (created at runtime by agent) -------
+workspace/**
+!workspace/.gitkeep
+
+# Benchmark run outputs
+benchmark_results.json
+final_10_benchmarks.json
+

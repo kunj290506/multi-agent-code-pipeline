@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -110,24 +111,9 @@ async def on_startup():
     logger.info(f"Ollama status: {'Connected' if ollama_ok else 'Offline'} (Models: {models})")
     n8n_ok = await check_n8n_health()
     if not n8n_ok:
-        logger.info("n8n is offline; auto-starting local n8n workflow engine on port 5678...")
-        try:
-            import subprocess
-            n8n_script = os.path.join(os.path.dirname(__file__), "n8n_server.py")
-            if sys.platform == "win32":
-                subprocess.Popen([sys.executable, n8n_script], creationflags=subprocess.CREATE_NO_WINDOW)
-            else:
-                subprocess.Popen([sys.executable, n8n_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            for _ in range(12):
-                await asyncio.sleep(0.3)
-                if await check_n8n_health():
-                    n8n_ok = True
-                    break
-        except Exception as e:
-            logger.warning(f"Could not auto-start local n8n server: {e}")
-
-    logger.info(f"n8n status: {'Connected' if n8n_ok else 'Offline'}")
-    if n8n_ok:
+        logger.info("n8n is offline on port 5678 (Ready for Docker n8n container: docker compose up -d n8n)")
+    else:
+        logger.info("n8n status: Connected on port 5678")
         await import_workflows_if_needed()
 
 
@@ -188,6 +174,21 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def clear_workspace_directory(workspace_path: str = DEFAULT_WORKSPACE):
+    """Clean all files and subdirectories from workspace so it starts completely empty."""
+    if os.path.exists(workspace_path):
+        for item in os.listdir(workspace_path):
+            item_path = os.path.join(workspace_path, item)
+            try:
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path, ignore_errors=True)
+                else:
+                    os.remove(item_path)
+            except Exception as e:
+                logger.warning(f"Error removing {item_path}: {e}")
+    os.makedirs(workspace_path, exist_ok=True)
+
+
 VALID_ACCOUNTS = {
     "kunj": {"kunj@123", "kunj @123"},
     "parth": {"parth@123", "path@123", "path @123", "parth @123"},
@@ -207,11 +208,23 @@ async def api_login(req: LoginRequest):
     normalized_valids = {p.replace(" ", "") for p in valid_passwords}
     if pwd not in valid_passwords and normalized_pwd not in normalized_valids:
         raise HTTPException(status_code=401, detail="Invalid username or password.")
+
+    # Clean workspace directory by default on login so it starts fresh and empty
+    clear_workspace_directory(DEFAULT_WORKSPACE)
+    logger.info(f"User '{uname}' logged in. Workspace cleared to clean empty state.")
+
     return {
         "status": "success",
         "username": uname,
         "token": STARTUP_SESSION_TOKEN,
     }
+
+
+@app.post("/workspace/clear")
+async def api_clear_workspace(workspace_path: Optional[str] = None):
+    ws = workspace_path or DEFAULT_WORKSPACE
+    clear_workspace_directory(ws)
+    return {"status": "success", "message": "Workspace cleared successfully.", "workspace": ws}
 
 
 @app.get("/auth/token")

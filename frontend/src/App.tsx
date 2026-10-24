@@ -16,6 +16,7 @@ import {
   loginUser,
   clearAuthToken,
   getPreviewUrl,
+  clearWorkspace,
 } from './api';
 import type {
   StepItem,
@@ -118,9 +119,11 @@ export default function App() {
     }
   }
 
-  // Create a clean default session for user
+  // Create a clean default session for user and ensure workspace is empty
   async function initFreshSession(userName: string) {
     try {
+      await clearWorkspace();
+      setFileTree([]);
       const newSess = await createSession({
         name: `${userName} Workspace Session`,
         model: selectedModel,
@@ -134,6 +137,7 @@ export default function App() {
       setTerminalOutput('');
       setActiveDiff(null);
       setCurrentFile(null);
+      await loadFileTree();
     } catch {
       // ignore
     }
@@ -163,6 +167,9 @@ export default function App() {
     try {
       const res = await loginUser(u, p);
       localStorage.setItem('multiagent_user', res.username);
+      setFileTree([]);
+      setCurrentFile(null);
+      setActiveDiff(null);
       setCurrentUser(res.username);
       setLoginPassword('');
     } catch (err: any) {
@@ -184,6 +191,7 @@ export default function App() {
     setTerminalOutput('');
     setCurrentFile(null);
     setActiveDiff(null);
+    setFileTree([]);
   }
 
   async function handleModelChange(modelName: string) {
@@ -607,14 +615,6 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            className="run-demo-btn"
-            onClick={handleRunDemo}
-            title="Open live working project demo in a new browser tab"
-          >
-            Run Project Demo [-&gt;]
-          </button>
-
           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
             User: <strong style={{ color: 'var(--accent-blue)' }}>{currentUser}</strong>
           </div>
@@ -650,21 +650,6 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-section-header">
             <span>Workspace Explorer</span>
-            <div style={{ display: 'flex', gap: '0.35rem' }}>
-              <button
-                onClick={handleRunDemo}
-                className="sidebar-run-btn"
-                title="Open live project demo in new tab"
-              >
-                Run [-&gt;]
-              </button>
-              <button
-                onClick={() => loadFileTree()}
-                style={{ fontSize: '0.7rem', padding: '0.1rem 0.35rem' }}
-              >
-                Refresh
-              </button>
-            </div>
           </div>
 
           <div className="file-tree-container">
@@ -803,14 +788,6 @@ export default function App() {
               }}
             >
               Audit Logs
-            </button>
-
-            <button
-              className="workspace-tab preview-tab"
-              onClick={handleRunDemo}
-              title="Open working project demo in new tab"
-            >
-              Run Demo [-&gt;]
             </button>
           </nav>
 

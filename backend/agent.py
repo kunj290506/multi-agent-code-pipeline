@@ -212,7 +212,12 @@ async def run_agent_loop(
                     ]
                     current_plan.append("Step 2: Verify execution results and run tests/checks")
                     current_plan.append("Step 3: Provide summary of changes")
-                yield {"event": "plan", "data": {"steps": current_plan, "current_step": 1, "status": "started"}}
+            # If no tools were called, the turn is complete.
+            if not tool_calls_to_run:
+                if step_tokens:
+                    add_message(session_id, "assistant", step_tokens, metadata={"steps": executed_steps})
+                yield {"event": "done", "data": {"status": "completed", "summary": step_tokens}}
+                break
 
             # Execute tool calls
             tool_retries: Dict[str, int] = {}
