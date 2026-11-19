@@ -14,7 +14,7 @@ logger = logging.getLogger("backend.n8n")
 N8N_BASE_URL = os.environ.get("N8N_BASE_URL", "http://127.0.0.1:5678").rstrip("/")
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", f"{N8N_BASE_URL}/webhook").rstrip("/")
 
-ALLOWED_WORKFLOWS = {"run-tests", "summarize-changes", "notify"}
+ALLOWED_WORKFLOWS = {"run-tests", "summarize-changes", "notify", "feature-request", "multi-agent-pipeline"}
 
 
 async def check_n8n_health() -> bool:

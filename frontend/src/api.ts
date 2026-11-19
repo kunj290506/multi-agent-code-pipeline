@@ -3,15 +3,17 @@
  * REST API and SSE client for local agentic coding assistant backend (:8000).
  */
 
-const API_BASE = typeof window !== 'undefined' && window.location.hostname
-  ? `http://${window.location.hostname}:8000`
-  : 'http://127.0.0.1:8000';
+const API_BASE = '';
 
 let cachedToken = '';
 let tokenPromise: Promise<string> | null = null;
 
-export async function getSessionToken(): Promise<string> {
-  if (cachedToken) return cachedToken;
+export async function getSessionToken(forceRefresh = false): Promise<string> {
+  if (cachedToken && !forceRefresh) return cachedToken;
+  if (forceRefresh) {
+    cachedToken = '';
+    tokenPromise = null;
+  }
   if (!tokenPromise) {
     tokenPromise = (async () => {
       try {
@@ -31,14 +33,33 @@ export async function getSessionToken(): Promise<string> {
   return tokenPromise;
 }
 
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = await getSessionToken();
-  const headers = new Headers(options.headers || {});
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-    headers.set('X-Session-Token', token);
+export function handleUnauthorized() {
+  clearAuthToken();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
   }
-  return fetch(url, { ...options, headers });
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  let token = await getSessionToken();
+  const buildHeaders = (tok: string) => {
+    const headers = new Headers(options.headers || {});
+    if (tok) {
+      headers.set('Authorization', `Bearer ${tok}`);
+      headers.set('X-Session-Token', tok);
+    }
+    return headers;
+  };
+
+  let res = await fetch(url, { ...options, headers: buildHeaders(token) });
+  if (res.status === 401) {
+    token = await getSessionToken(true);
+    res = await fetch(url, { ...options, headers: buildHeaders(token) });
+    if (res.status === 401) {
+      handleUnauthorized();
+    }
+  }
+  return res;
 }
 
 export async function loginUser(username: string, password: string): Promise<{ username: string; token: string }> {
@@ -61,11 +82,55 @@ export function clearAuthToken() {
   tokenPromise = null;
 }
 
-export function getPreviewUrl(subpath: string = ''): string {
-  const base = typeof window !== 'undefined' && window.location.hostname
-    ? `http://${window.location.hostname}:8000`
-    : 'http://127.0.0.1:8000';
-  return subpath ? `${base}/preview/${subpath.replace(/^\//, '')}` : `${base}/preview/`;
+export function getPreviewUrl(subpath: string = '', cacheBust?: number): string {
+  const base = subpath ? `/preview/${subpath.replace(/^\//, '')}` : `/preview/`;
+  if (cacheBust) {
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}v=${cacheBust}`;
+  }
+  return base;
+}
+
+export interface PreviewInfo {
+  type: 'web' | 'python' | 'node' | 'files' | 'empty';
+  entry: string | null;
+  preview_url: string;
+  command: string | null;
+  html_files: string[];
+  files: string[];
+  validation?: {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+}
+
+export async function fetchPreviewInfo(workspacePath?: string): Promise<PreviewInfo> {
+  const url = workspacePath
+    ? `${API_BASE}/preview/info?workspace_path=${encodeURIComponent(workspacePath)}`
+    : `${API_BASE}/preview/info`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) {
+    return { type: 'empty', entry: null, preview_url: '/preview/', command: null, html_files: [], files: [] };
+  }
+  return res.json();
+}
+
+export async function runWorkspaceProject(params: {
+  command?: string;
+  entry?: string;
+  workspace_path?: string;
+} = {}): Promise<{ success: boolean; command: string; returncode: number; output: string }> {
+  const res = await authFetch(`${API_BASE}/workspace/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Run failed with HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 export interface Session {
@@ -127,11 +192,27 @@ export async function fetchModels(): Promise<string[]> {
   return data.models || ['qwen2.5:7b-instruct-q4_K_M'];
 }
 
+export async function fetchModelsInfo(): Promise<{ models: string[]; defaultModel: string }> {
+  const res = await authFetch(`${API_BASE}/models`);
+  if (!res.ok) return { models: ['qwen2.5:7b-instruct-q4_K_M'], defaultModel: 'qwen2.5:7b-instruct-q4_K_M' };
+  const data = await res.json();
+  const models: string[] = data.models || ['qwen2.5:7b-instruct-q4_K_M'];
+  const defaultModel: string = data.default_model || models[0] || 'qwen2.5:7b-instruct-q4_K_M';
+  return { models, defaultModel };
+}
+
 export async function listSessions(): Promise<Session[]> {
   const res = await authFetch(`${API_BASE}/sessions`);
   if (!res.ok) throw new Error('Failed to load sessions');
   const data = await res.json();
   return data.sessions || [];
+}
+
+export async function getSession(sessionId: string): Promise<Session | null> {
+  const res = await authFetch(`${API_BASE}/sessions/${sessionId}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to load session (${res.status})`);
+  return res.json();
 }
 
 export async function createSession(params: Partial<Session>): Promise<Session> {
@@ -249,28 +330,55 @@ export function streamAgentTurn(
 ): () => void {
   const controller = new AbortController();
 
-  getSessionToken().then((token) => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-      headers['X-Session-Token'] = token;
+  getSessionToken().then(async (token) => {
+    const buildHeaders = (tok: string): Record<string, string> => {
+      const h: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (tok) {
+        h['Authorization'] = `Bearer ${tok}`;
+        h['X-Session-Token'] = tok;
+      }
+      return h;
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: buildHeaders(token),
+        body: JSON.stringify({ content: prompt }),
+        signal: controller.signal,
+      });
+
+      if (response.status === 401) {
+        token = await getSessionToken(true);
+        response = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: buildHeaders(token),
+          body: JSON.stringify({ content: prompt }),
+          signal: controller.signal,
+        });
+        if (response.status === 401) {
+          handleUnauthorized();
+          callbacks.onError?.('Session unauthorized (401). Please sign in again.');
+          return;
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        callbacks.onError?.(err.message || 'Connection lost');
+      }
+      return;
     }
 
-    fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ content: prompt }),
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok || !response.body) {
-        callbacks.onError?.(`Server responded with HTTP ${response.status}`);
-        return;
-      }
+    if (!response.ok || !response.body) {
+      callbacks.onError?.(`Server responded with HTTP ${response.status}`);
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-
+    try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -331,11 +439,11 @@ export function streamAgentTurn(
           }
         }
       }
-    }).catch((err) => {
+    } catch (err: any) {
       if (err.name !== 'AbortError') {
         callbacks.onError?.(err.message || 'Connection lost');
       }
-    });
+    }
   });
 
   return () => {

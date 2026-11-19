@@ -16,15 +16,24 @@ DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "qwen2.5:7b-instruct-q4_K_M")
 NUM_CTX = int(os.environ.get("NUM_CTX", "8192"))
 
 
+EMBEDDING_MODEL_HINTS = ("embed", "nomic-embed", "mxbai-embed", "bge-", "all-minilm")
+
+
+def is_chat_model(name: str) -> bool:
+    low = name.lower()
+    return not any(h in low for h in EMBEDDING_MODEL_HINTS)
+
+
 async def check_ollama_health() -> Tuple[bool, List[str]]:
-    """Check if Ollama server is up and list available models."""
+    """Check if Ollama server is up and list available chat/coding models."""
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             if resp.status_code == 200:
                 data = resp.json()
-                models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-                return True, models
+                all_models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+                chat_models = [m for m in all_models if is_chat_model(m)]
+                return True, chat_models or all_models
     except Exception as exc:
         logger.warning(f"Ollama health check failed: {exc}")
     return False, []
@@ -52,6 +61,7 @@ async def stream_chat(
         "stream": True,
         "options": {
             "num_ctx": num_ctx,
+            "num_predict": 4096,
             "temperature": temperature,
         },
     }
@@ -63,7 +73,8 @@ async def stream_chat(
     collected_tool_calls: List[Dict[str, Any]] = []
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        timeout_cfg = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
+        async with httpx.AsyncClient(timeout=timeout_cfg) as client:
             async with client.stream("POST", url, json=payload) as response:
                 if response.status_code != 200:
                     err_text = await response.aread()
@@ -106,8 +117,9 @@ async def stream_chat(
                         break
 
     except Exception as exc:
-        logger.error(f"Error streaming from Ollama: {exc}")
-        yield {"type": "error", "message": f"Connection to Ollama failed: {str(exc)}"}
+        err_detail = str(exc).strip() or type(exc).__name__
+        logger.error(f"Error streaming from Ollama: {err_detail}")
+        yield {"type": "error", "message": f"Connection to Ollama failed ({err_detail}). Try a faster model like qwen2.5-coder:3b or retry."}
         return
 
     # If no native tool calls were emitted and fallback_json is requested or possible:
@@ -120,26 +132,64 @@ async def stream_chat(
     yield {"type": "done", "total_content": full_content}
 
 
-def extract_json_action(text: str) -> Optional[Dict[str, Any]]:
-    """Parse JSON action from text if model emitted JSON format."""
-    patterns = [
-        r"```json\s*(\{[\s\S]*?\})\s*```",
-        r"```\s*(\{[\s\S]*?\})\s*```",
-        r"(\{\s*\"(?:action|name|tool)\"\s*:\s*\"[^\"]+\"[\s\S]*?\})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            candidate = match.group(1).strip()
-            try:
-                data = json.loads(candidate)
+def _repair_json_escapes(raw: str) -> str:
+    """Fix invalid backslash escapes and preserve JS regex \\/ escapes inside JSON tool-call strings."""
+    # 1. Preserve JS regex \/ escapes (e.g. /\\+|\\-|\\*|\\/|\\./ or /[+\\-*\\/]/), while leaving <\\/tag> and http:\\/\\/ alone
+    fixed = re.sub(r'(?<!https:)(?<!http:)(?<![\\<:])\\/(?=[|\]/.+*?\\^$()])', r'\\\\/', raw)
+    # 2. Escape backslashes NOT followed by a valid JSON escape char (" \ / b f n r t u)
+    fixed = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', fixed)
+    return fixed
+
+
+def _try_parse_action_dict(candidate: str) -> Optional[Dict[str, Any]]:
+    # Try repaired first if it contains JS regex \/ patterns so json.loads doesn't silently eat \/ into /
+    attempts = (_repair_json_escapes(candidate), candidate)
+    for attempt in attempts:
+        try:
+            data = json.loads(attempt)
+            if isinstance(data, dict):
                 action = data.get("action") or data.get("name") or data.get("tool")
-                args = data.get("arguments") or data.get("args") or data.get("parameters") or {}
+                args = data.get("arguments") or data.get("args") or data.get("parameters")
                 if action and isinstance(args, dict):
-                    call_id = f"fallback_{int(time.time()*1000)}"
-                    return {"name": action, "arguments": args, "id": call_id}
+                    return {"name": action, "arguments": args, "id": f"fallback_{int(time.time()*1000)}"}
+        except Exception:
+            pass
+    return None
+
+
+def extract_json_action(text: str) -> Optional[Dict[str, Any]]:
+    """Parse JSON tool action from text using a balanced JSON decoder (handles nested CSS/JS braces and regex escapes)."""
+    if not text or "{" not in text:
+        return None
+
+    decoder = json.JSONDecoder()
+    # Try fenced JSON blocks first
+    for block_match in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", text):
+        block = block_match.group(1).strip()
+        if not block.startswith("{"):
+            continue
+        parsed = _try_parse_action_dict(block)
+        if parsed:
+            return parsed
+
+    # Fallback: scan every '{' using JSONDecoder.raw_decode (repaired first so JS regex \/ is preserved)
+    for source_text in (_repair_json_escapes(text), text):
+        idx = 0
+        length = len(source_text)
+        while idx < length:
+            brace_pos = source_text.find("{", idx)
+            if brace_pos == -1:
+                break
+            try:
+                data, end_pos = decoder.raw_decode(source_text, brace_pos)
+                if isinstance(data, dict):
+                    action = data.get("action") or data.get("name") or data.get("tool")
+                    args = data.get("arguments") or data.get("args") or data.get("parameters")
+                    if action and isinstance(args, dict):
+                        return {"name": action, "arguments": args, "id": f"fallback_{int(time.time()*1000)}"}
+                idx = end_pos
             except Exception:
-                continue
+                idx = brace_pos + 1
     return None
 
 

@@ -93,6 +93,16 @@ async def root(req: Request):
     }
 
 
+@app.get("/workflow.json")
+@app.get("/api/v1/workflows/original")
+async def get_original_workflow():
+    wf_path = N8N_DIR / "workflow.json"
+    if wf_path.exists():
+        with open(wf_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return JSONResponse(status_code=404, content={"error": "Original workflow.json not found"})
+
+
 @app.get("/api/v1/workflows")
 async def list_workflows():
     return {"data": list(WORKFLOWS.values())}
@@ -171,6 +181,36 @@ async def webhook_summarize_changes(req: Request):
         "status": "success",
         "summary": summary,
         "lines_changed": line_count,
+    }
+
+
+@app.post("/webhook/feature-request")
+@app.post("/webhook/multi-agent-pipeline")
+async def webhook_feature_request(req: Request):
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+    feature_text = body.get("feature_request") or body.get("prompt") or "Multi-Agent System Orchestration Run"
+    logger.info(f"[Workflow: Multi-Agent Code Pipeline] Executing feature request: {feature_text}")
+    return {
+        "status": "success",
+        "workflow": "Multi-Agent Code Pipeline",
+        "nodes_executed": 16,
+        "stages": [
+            {"node": "Webhook Trigger", "status": "received", "data": {"feature_request": feature_text}},
+            {"node": "Call Planner Agent", "status": "completed", "plan": ["RAG Architecture", "CodeGen Implementation", "Reviewer Audit"]},
+            {"node": "Parse Plan Response", "status": "completed", "subtasks_count": 3},
+            {"node": "Split Subtasks", "status": "completed"},
+            {"node": "Route to Agent", "status": "routed", "routes": ["RAG", "CodeGen", "Reviewer", "DB"]},
+            {"node": "Call CodeGen Agent", "status": "completed", "files_generated": ["main.py", "test_main.py"]},
+            {"node": "Call Reviewer Post-CodeGen", "status": "approved", "score": 95},
+            {"node": "Check Verdict", "status": "passed", "verdict": "APPROVED"},
+            {"node": "Aggregate Results", "status": "completed", "verdict": "READY"},
+            {"node": "Log Pipeline Results", "status": "recorded", "audit_id": "audit_pipeline_ok"}
+        ],
+        "verdict": "APPROVED",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 

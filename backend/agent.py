@@ -41,6 +41,7 @@ from tools import (
     tool_search_text,
     tool_write_file,
 )
+from validator import validate_workspace_file
 
 logger = logging.getLogger("backend.agent")
 
@@ -97,6 +98,70 @@ def extract_plan(text: str) -> Optional[List[str]]:
     return plan_steps if len(plan_steps) >= 2 else None
 
 
+def _unescape_if_json_string(code: str) -> str:
+    """If extracted code has literal \\n and \\\" from an unparsed JSON string, restore real newlines and quotes."""
+    if "\\n" in code and code.count("\n") <= 2 and ('\\"' in code or "<html" in code.lower() or "<!doctype" in code.lower()):
+        return (
+            code.replace("\\r\\n", "\n")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\'", "'")
+            .replace("\\\\", "\\")
+        )
+    return code
+
+
+def _extract_fallback_file_write(user_prompt: str, assistant_text: str) -> Optional[Dict[str, Any]]:
+    """
+    If a smaller local model prints a complete code/HTML file directly in chat instead of calling
+    write_file, extract it into a synthetic write_file tool call so the workspace is actually built.
+    """
+    if not assistant_text or len(assistant_text) < 40:
+        return None
+
+    # 1. Check for fenced HTML block or full HTML document
+    html_block = re.search(r"```html\s*([\s\S]*?)```", assistant_text, re.IGNORECASE)
+    if html_block and ("<html" in html_block.group(1).lower() or "<!doctype html" in html_block.group(1).lower()):
+        code = _unescape_if_json_string(html_block.group(1).strip())
+        target_match = re.search(r"\b([A-Za-z0-9_./-]+\.html?)\b", user_prompt, re.IGNORECASE)
+        target_path = target_match.group(1) if target_match else "index.html"
+        return {
+            "name": "write_file",
+            "arguments": {"path": target_path, "content": code},
+            "id": f"autosave_{int(time.time() * 1000)}",
+        }
+
+    raw_html = re.search(r"(<!DOCTYPE\s+html[\s\S]*?</html>)", assistant_text, re.IGNORECASE)
+    if raw_html:
+        code = _unescape_if_json_string(raw_html.group(1).strip())
+        target_match = re.search(r"\b([A-Za-z0-9_./-]+\.html?)\b", user_prompt, re.IGNORECASE)
+        target_path = target_match.group(1) if target_match else "index.html"
+        return {
+            "name": "write_file",
+            "arguments": {"path": target_path, "content": code},
+            "id": f"autosave_{int(time.time() * 1000)}",
+        }
+
+    # 2. Check if user explicitly asked to create a specific .py / .js / .css file and model emitted a fenced block
+    create_intent = bool(re.search(r"\b(create|write|build|make|generate)\b", user_prompt, re.IGNORECASE))
+    if create_intent:
+        file_match = re.search(r"\b([A-Za-z0-9_/-]+\.(?:py|js|mjs|ts|css))\b", user_prompt)
+        if file_match:
+            target_path = file_match.group(1)
+            ext = os.path.splitext(target_path)[1].lower()
+            lang_map = {".py": "python|py", ".js": "javascript|js", ".mjs": "javascript|js", ".ts": "typescript|ts", ".css": "css"}
+            lang_pat = lang_map.get(ext, "")
+            code_match = re.search(rf"```(?:{lang_pat})?\s*\n([\s\S]*?)```", assistant_text, re.IGNORECASE)
+            if code_match and code_match.group(1).strip():
+                return {
+                    "name": "write_file",
+                    "arguments": {"path": target_path, "content": code_match.group(1).strip() + "\n"},
+                    "id": f"autosave_{int(time.time() * 1000)}",
+                }
+    return None
+
+
 async def run_agent_loop(
     session_id: str,
     user_prompt: str,
@@ -137,6 +202,10 @@ async def run_agent_loop(
     recently_read: List[str] = []
     files_modified: Set[str] = set()
     executed_steps = 0
+    repair_attempts = 0
+    consecutive_edit_failures = 0
+    last_tool_signature: Optional[str] = None
+    repeat_tool_count = 0
     current_plan: Optional[List[str]] = None
 
     # Build prompt messages
@@ -152,7 +221,7 @@ async def run_agent_loop(
     try:
         while executed_steps < MAX_STEPS:
             if stop_event.is_set():
-                yield {"event": "done", "data": {"status": "stopped", "message": "Turn stopped by operator."}}
+                yield {"event": "done", "data": {"status": "stopped", "message": "Turn stopped by operator.", "files_modified": sorted(files_modified)}}
                 return
 
             executed_steps += 1
@@ -163,7 +232,7 @@ async def run_agent_loop(
             # Stream response from Ollama
             async for chunk in stream_chat(model=model, messages=messages, tools=TOOL_DEFINITIONS):
                 if stop_event.is_set():
-                    yield {"event": "done", "data": {"status": "stopped", "message": "Turn stopped by operator."}}
+                    yield {"event": "done", "data": {"status": "stopped", "message": "Turn stopped by operator.", "files_modified": sorted(files_modified)}}
                     return
 
                 chunk_type = chunk.get("type")
@@ -188,13 +257,25 @@ async def run_agent_loop(
                     break
 
             if turn_failed:
-                break
+                return
 
-            # If model produced text, append assistant message to conversation context
-            if step_tokens:
-                messages.append({"role": "assistant", "content": step_tokens})
-                # Check plan after full tokens if not detected yet
-                if not current_plan:
+            # Fallback: if model printed full code/HTML in chat without calling write_file, extract it automatically
+            if not tool_calls_to_run and not files_modified and step_tokens:
+                fallback_tc = _extract_fallback_file_write(user_prompt, step_tokens)
+                if fallback_tc:
+                    logger.info(f"Auto-extracted fallback write_file for '{fallback_tc['arguments'].get('path')}' from assistant response.")
+                    tool_calls_to_run.append(fallback_tc)
+
+            # Append assistant message properly (including tool_calls so Ollama multi-step context stays valid!)
+            if step_tokens or tool_calls_to_run:
+                assistant_msg: Dict[str, Any] = {"role": "assistant", "content": step_tokens}
+                if tool_calls_to_run:
+                    assistant_msg["tool_calls"] = [
+                        {"function": {"name": tc.get("name", ""), "arguments": tc.get("arguments", {})}}
+                        for tc in tool_calls_to_run
+                    ]
+                messages.append(assistant_msg)
+                if step_tokens and not current_plan:
                     detected = extract_plan(step_tokens)
                     if detected:
                         current_plan = detected
@@ -207,17 +288,57 @@ async def run_agent_loop(
                     current_plan = detected
                 else:
                     current_plan = [
-                        f"Step 1: Execute tool '{tc.get('name')}' to implement required changes"
+                        f"Execute {tc.get('name')} ({tc.get('arguments', {}).get('path') or tc.get('arguments', {}).get('command') or ''})".strip()
                         for tc in tool_calls_to_run
                     ]
-                    current_plan.append("Step 2: Verify execution results and run tests/checks")
-                    current_plan.append("Step 3: Provide summary of changes")
-            # If no tools were called, the turn is complete.
+                    current_plan.append("Verify generated code for syntax and interactivity bugs")
+                    current_plan.append("Finalize and summarize changes")
+                yield {"event": "plan", "data": {"steps": current_plan}}
+
+            # If no tools were called, run final automated verification before completing!
             if not tool_calls_to_run:
+                if files_modified and repair_attempts < 2:
+                    all_final_errors: List[str] = []
+                    for mod_p in sorted(files_modified):
+                        val_res = validate_workspace_file(workspace_root, mod_p, check_missing_assets=True, strict_assets=True)
+                        if not val_res["valid"]:
+                            all_final_errors.extend(val_res["errors"])
+
+                    if all_final_errors:
+                        repair_attempts += 1
+                        err_bullets = "\n".join(f"- {e}" for e in all_final_errors)
+                        logger.warning(f"Final verification failed (attempt {repair_attempts}/2): {all_final_errors}")
+                        yield {
+                            "event": "tool_result",
+                            "data": {
+                                "name": "verify_project",
+                                "id": f"verify_{int(time.time() * 1000)}",
+                                "success": False,
+                                "output": f"Automated verification detected issues (auto-fixing {repair_attempts}/2):\n{err_bullets}",
+                            },
+                        }
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "Automated verification found these bugs in your generated files:\n"
+                                f"{err_bullets}\n\n"
+                                "Please fix ALL of these bugs right now using `edit_file` or `write_file` "
+                                "so the demo runs cleanly and is 100% interactive."
+                            ),
+                        })
+                        continue
+
                 if step_tokens:
                     add_message(session_id, "assistant", step_tokens, metadata={"steps": executed_steps})
-                yield {"event": "done", "data": {"status": "completed", "summary": step_tokens}}
-                break
+                yield {
+                    "event": "done",
+                    "data": {
+                        "status": "completed",
+                        "summary": step_tokens,
+                        "files_modified": sorted(files_modified),
+                    },
+                }
+                return
 
             # Execute tool calls
             tool_retries: Dict[str, int] = {}
@@ -334,6 +455,26 @@ async def run_agent_loop(
                         if decision.get("auto_approve_all"):
                             auto_approve_writes = True
 
+                # Duplicate tool call loop breaker (prevents small models repeating the same broken edit)
+                sig = f"{tool_name}:{json.dumps(args, sort_keys=True)}"
+                if sig == last_tool_signature:
+                    repeat_tool_count += 1
+                    if repeat_tool_count >= 2:
+                        loop_msg = (
+                            f"Stopped repeating identical {tool_name} call. "
+                            "Instead of repeating edit_file, rewrite the entire fixed file cleanly using write_file, "
+                            "or summarize the current state if the file is ready."
+                        )
+                        yield {
+                            "event": "tool_result",
+                            "data": {"name": tool_name, "id": call_id, "success": False, "output": loop_msg},
+                        }
+                        messages.append({"role": "tool", "name": tool_name, "content": loop_msg})
+                        continue
+                else:
+                    last_tool_signature = sig
+                    repeat_tool_count = 0
+
                 # Step 6: Execute tool
                 success = False
                 output = ""
@@ -356,13 +497,27 @@ async def run_agent_loop(
 
                 elif tool_name == "write_file":
                     p = args.get("path", "")
-                    success, output, extra = tool_write_file(workspace_root, p, args.get("content", ""))
+                    raw_content = _unescape_if_json_string(args.get("content", ""))
+                    success, output, extra = tool_write_file(workspace_root, p, raw_content)
                     if success:
                         files_modified.add(p)
+                        consecutive_edit_failures = 0
                         yield {
                             "event": "file_changed",
                             "data": {"path": p, "before": extra.get("before", ""), "after": extra.get("after", "")},
                         }
+                        val_res = validate_workspace_file(workspace_root, p, check_missing_assets=True, strict_assets=False)
+                        if not val_res["valid"]:
+                            err_text = "\n".join(f"- {e}" for e in val_res["errors"])
+                            output += (
+                                f"\n\n[AUTOMATED VALIDATION FAILED — FIX IMMEDIATELY]:\n{err_text}\n"
+                                "Fix these issues cleanly using write_file with the complete corrected file before finishing."
+                            )
+                        elif val_res["warnings"]:
+                            warn_text = "\n".join(f"- {w}" for w in val_res["warnings"])
+                            output += f"\n\n[VALIDATION NOTES]:\n{warn_text}"
+                        else:
+                            output += "\n[VALIDATION PASSED: syntax and DOM interactivity checks passed.]"
 
                 elif tool_name == "edit_file":
                     p = args.get("path", "")
@@ -373,6 +528,23 @@ async def run_agent_loop(
                             "event": "file_changed",
                             "data": {"path": p, "before": extra.get("before", ""), "after": extra.get("after", "")},
                         }
+                        val_res = validate_workspace_file(workspace_root, p, check_missing_assets=True, strict_assets=False)
+                        if not val_res["valid"]:
+                            consecutive_edit_failures += 1
+                            err_text = "\n".join(f"- {e}" for e in val_res["errors"])
+                            hint = (
+                                "Multiple partial edits failed validation — rewrite the complete clean file in one `write_file` call."
+                                if consecutive_edit_failures >= 2
+                                else "Fix these issues right now using edit_file or write_file before finishing."
+                            )
+                            output += f"\n\n[AUTOMATED VALIDATION FAILED — FIX IMMEDIATELY]:\n{err_text}\n{hint}"
+                        elif val_res["warnings"]:
+                            consecutive_edit_failures = 0
+                            warn_text = "\n".join(f"- {w}" for w in val_res["warnings"])
+                            output += f"\n\n[VALIDATION NOTES]:\n{warn_text}"
+                        else:
+                            consecutive_edit_failures = 0
+                            output += "\n[VALIDATION PASSED: syntax and DOM interactivity checks passed.]"
 
                 elif tool_name == "delete_file":
                     p = args.get("path", "")
@@ -448,7 +620,7 @@ async def run_agent_loop(
         )
         add_message(session_id, "assistant", limit_summary, metadata={"steps": executed_steps, "limit_reached": True})
         yield {"event": "token", "data": {"token": "\n\n" + limit_summary}}
-        yield {"event": "done", "data": {"status": "limit_reached", "summary": limit_summary}}
+        yield {"event": "done", "data": {"status": "limit_reached", "summary": limit_summary, "files_modified": sorted(files_modified)}}
 
     finally:
         stop_events.pop(session_id, None)
